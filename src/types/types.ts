@@ -69,6 +69,11 @@ export interface ReaderSettings {
 	highlightActiveLine: boolean;
 	// Translation target language override; defaults to the UI language when unset
 	translationTargetLanguage?: string;
+	// Phonetics lookup sends the selected word to a dictionary service;
+	// default on, privacy-sensitive users can disable it
+	dictionaryLookupEnabled?: boolean;
+	// Override for the dictionary endpoint (self-hosted or test server)
+	dictionaryBaseUrl?: string;
 	customCss: string;
 }
 

@@ -14,6 +14,8 @@ export interface WordTranslation {
 	partOfSpeech?: string;
 	meaningInContext?: string;
 	otherCommonMeanings?: string[];
+	// LLM-provided IPA, used only when the dictionary source misses (issue #5)
+	ipa?: string;
 }
 
 export interface TranslateWordRequest {
@@ -53,7 +55,8 @@ const WORD_SYSTEM_PROMPT =
 	'"translation" (best translation of the selected text into the target language, as used in this exact sentence), ' +
 	'"partOfSpeech" (short English label like "noun" or "verb", empty string if not applicable), ' +
 	'"meaningInContext" (one short sentence in the target language explaining what the selection means in this sentence), ' +
-	'"otherCommonMeanings" (array of up to 3 other common translations, empty array if none).';
+	'"otherCommonMeanings" (array of up to 3 other common translations, empty array if none), ' +
+	'"ipa" (IPA transcription of the selection if you are confident it is correct, empty string otherwise).';
 
 function stripCodeFences(text: string): string {
 	return text
@@ -83,7 +86,8 @@ function parseWordTranslation(content: string): WordTranslation {
 		meaningInContext: typeof parsed.meaningInContext === 'string' ? parsed.meaningInContext : undefined,
 		otherCommonMeanings: Array.isArray(parsed.otherCommonMeanings)
 			? parsed.otherCommonMeanings.filter((m: unknown) => typeof m === 'string')
-			: undefined
+			: undefined,
+		ipa: typeof parsed.ipa === 'string' && parsed.ipa ? parsed.ipa : undefined
 	};
 }
 

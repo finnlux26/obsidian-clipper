@@ -6,6 +6,7 @@ import { describe, test, expect, beforeEach, vi } from 'vitest';
 import browser from './browser-polyfill';
 import { shouldOfferTranslation, openTranslationPopover } from './reader-translation';
 import { clearTranslationCache } from './translator';
+import { clearPhoneticsCache } from './dictionary';
 import { generalSettings } from './storage-utils';
 import { SelectionContext } from './translator-context';
 
@@ -103,7 +104,12 @@ describe('openTranslationPopover', () => {
 		document.body.innerHTML = READER_DOM;
 		sendMessage.mockReset();
 		clearTranslationCache();
+		clearPhoneticsCache();
 		configureLlm();
+		generalSettings.readerSettings = {
+			...generalSettings.readerSettings,
+			dictionaryLookupEnabled: true
+		};
 	});
 
 	function proxyRepliesWith(result: unknown) {
@@ -174,7 +180,11 @@ describe('openTranslationPopover', () => {
 		});
 		// The actionable "configure interpreter" copy, resolved from en locale
 		expect(popover.textContent).toContain('Set up an Interpreter model');
-		expect(sendMessage).not.toHaveBeenCalled();
+		// No LLM request left the extension (the dictionary lookup is
+		// independent of the LLM engine and may still fire)
+		const llmCalls = sendMessage.mock.calls
+			.filter(c => String((c[0] as any).url).includes('api.anthropic.com'));
+		expect(llmCalls).toHaveLength(0);
 	});
 
 	test('shows a failure message when the request fails', async () => {
@@ -186,6 +196,91 @@ describe('openTranslationPopover', () => {
 			expect(popover.getAttribute('data-state')).toBe('error');
 		});
 		expect(popover.textContent).toContain('Translation failed');
+	});
+
+	function proxyRoutesDictionaryAndLlm(options: { dictionaryHit: boolean; llmResult: unknown }) {
+		sendMessage.mockImplementation(async (message: any) => {
+			const url = String(message.url);
+			if (url.includes('dictionaryapi.dev') || url.includes('/entries/')) {
+				if (!options.dictionaryHit) {
+					return { ok: false, status: 404, text: '{}' };
+				}
+				return {
+					ok: true, status: 200,
+					text: JSON.stringify([{
+						word: 'bank',
+						phonetics: [
+							{ text: '/bæŋk/', audio: 'https://x.test/bank-uk.mp3' },
+							{ text: '/bæŋk/', audio: 'https://x.test/bank-us.mp3' }
+						]
+					}])
+				};
+			}
+			return {
+				ok: true, status: 200,
+				text: JSON.stringify({
+					content: [{ type: 'text', text: JSON.stringify(options.llmResult) }],
+					stop_reason: 'end_turn'
+				})
+			};
+		});
+	}
+
+	test('renders UK/US phonetics with audio buttons for an English word', async () => {
+		proxyRoutesDictionaryAndLlm({ dictionaryHit: true, llmResult: { translation: '银行' } });
+
+		const popover = openTranslationPopover(document, CTX, 'zh');
+
+		await vi.waitFor(() => {
+			expect(popover.querySelector('.obsidian-translate-phonetics')).not.toBeNull();
+		});
+		const row = popover.querySelector('.obsidian-translate-phonetics')!;
+		expect(row.textContent).toContain('/bæŋk/');
+		expect(row.textContent).toContain('UK');
+		expect(row.textContent).toContain('US');
+		expect(row.querySelectorAll('button.obsidian-translate-audio')).toHaveLength(2);
+	});
+
+	test('dictionary miss falls back to the LLM-provided IPA marked as approximate', async () => {
+		proxyRoutesDictionaryAndLlm({
+			dictionaryHit: false,
+			llmResult: { translation: '银行', ipa: '/bæŋk/' }
+		});
+
+		const popover = openTranslationPopover(document, CTX, 'zh');
+
+		await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+		await vi.waitFor(() => {
+			const row = popover.querySelector('.obsidian-translate-phonetics');
+			expect(row?.textContent).toContain('/bæŋk/');
+		});
+		expect(popover.querySelector('.obsidian-translate-phonetics')!.textContent)
+			.toContain('approx');
+		expect(popover.querySelectorAll('button.obsidian-translate-audio')).toHaveLength(0);
+	});
+
+	test('dictionary failure never blocks the translation itself', async () => {
+		proxyRoutesDictionaryAndLlm({ dictionaryHit: false, llmResult: { translation: '银行' } });
+
+		const popover = openTranslationPopover(document, CTX, 'zh');
+
+		await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+		expect(popover.textContent).toContain('银行');
+		expect(popover.querySelector('.obsidian-translate-phonetics')).toBeNull();
+	});
+
+	test('privacy switch off: no dictionary request leaves the extension', async () => {
+		generalSettings.readerSettings = {
+			...generalSettings.readerSettings,
+			dictionaryLookupEnabled: false
+		};
+		proxyRoutesDictionaryAndLlm({ dictionaryHit: true, llmResult: { translation: '银行' } });
+
+		const popover = openTranslationPopover(document, CTX, 'zh');
+		await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+
+		const urls = sendMessage.mock.calls.map(c => String((c[0] as any).url));
+		expect(urls.some(u => u.includes('dictionaryapi') || u.includes('/entries/'))).toBe(false);
 	});
 
 	test('Escape closes the popover', async () => {

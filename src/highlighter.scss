@@ -367,6 +367,47 @@ body.obsidian-highlighter-active {
 		}
 	}
 
+	.obsidian-translate-phonetics {
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		gap: 10px;
+		margin-bottom: 6px;
+		color: #c8c8c8;
+		font-size: 12px;
+	}
+
+	.obsidian-translate-phonetic {
+		display: inline-flex;
+		align-items: center;
+		gap: 4px;
+	}
+
+	.obsidian-translate-phonetic-region {
+		color: #8f8f8f;
+		font-size: 10px;
+		letter-spacing: 0.04em;
+	}
+
+	.obsidian-translate-phonetic-approx {
+		color: #8f8f8f;
+		font-size: 11px;
+	}
+
+	.obsidian-translate-audio {
+		display: inline-flex;
+		align-items: center;
+		background: none;
+		border: none;
+		color: #a0a0a0;
+		cursor: pointer;
+		padding: 1px;
+
+		&:hover {
+			color: #f0f0f0;
+		}
+	}
+
 	.obsidian-translate-pos {
 		color: #a0a0a0;
 		font-size: 11px;

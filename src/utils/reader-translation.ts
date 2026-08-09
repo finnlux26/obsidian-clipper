@@ -16,6 +16,7 @@ import {
 	WordTranslation,
 	translateSelection
 } from './translator';
+import { PhoneticsResult, isEnglishWord, lookupPhonetics } from './dictionary';
 
 const POPOVER_CLASS = 'obsidian-translate-popover';
 const BUTTON_CLASS = 'obsidian-selection-translate';
@@ -47,6 +48,64 @@ function articleMetaFromDocument(doc: Document): ArticleMeta {
 
 function closePopover(doc: Document) {
 	doc.querySelector(`.${POPOVER_CLASS}`)?.remove();
+}
+
+// Phonetics row: dictionary data wins; an LLM-provided IPA is only shown as
+// an approximation when the dictionary missed. Returns null when neither is
+// available so the row simply doesn't appear.
+function buildPhoneticsRow(doc: Document, dict: PhoneticsResult | null, llmIpa?: string): HTMLElement | null {
+	const hasDict = !!(dict && (dict.uk || dict.us));
+	if (!hasDict && !llmIpa) return null;
+
+	const row = doc.createElement('div');
+	row.className = 'obsidian-translate-phonetics';
+
+	if (hasDict) {
+		const regions: Array<{ label: string; pron?: { ipa?: string; audioUrl?: string } }> = [
+			{ label: 'UK', pron: dict!.uk },
+			{ label: 'US', pron: dict!.us }
+		];
+		for (const { label, pron } of regions) {
+			if (!pron || (!pron.ipa && !pron.audioUrl)) continue;
+			const item = doc.createElement('span');
+			item.className = 'obsidian-translate-phonetic';
+			const region = doc.createElement('span');
+			region.className = 'obsidian-translate-phonetic-region';
+			region.textContent = label;
+			item.appendChild(region);
+			if (pron.ipa) {
+				const ipa = doc.createElement('span');
+				ipa.textContent = pron.ipa;
+				item.appendChild(ipa);
+			}
+			if (pron.audioUrl) {
+				const play = doc.createElement('button');
+				play.type = 'button';
+				play.className = 'obsidian-translate-audio';
+				play.setAttribute('aria-label', getMessage('translationPlayAudio'));
+				setElementHTML(play, '<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>');
+				const url = pron.audioUrl;
+				play.addEventListener('click', (e) => {
+					e.stopPropagation();
+					const win = doc.defaultView || window;
+					new win.Audio(url).play().catch(() => {});
+				});
+				item.appendChild(play);
+			}
+			row.appendChild(item);
+		}
+	} else if (llmIpa) {
+		const item = doc.createElement('span');
+		item.className = 'obsidian-translate-phonetic';
+		item.textContent = llmIpa;
+		const approx = doc.createElement('span');
+		approx.className = 'obsidian-translate-phonetic-approx';
+		approx.textContent = `(${getMessage('translationPhoneticsApprox')})`;
+		row.appendChild(item);
+		row.appendChild(approx);
+	}
+
+	return row.childElementCount > 0 ? row : null;
 }
 
 function renderResult(doc: Document, popover: HTMLElement, result: WordTranslation) {
@@ -168,9 +227,32 @@ export function openTranslationPopover(
 	});
 	observer.observe(doc.body, { childList: true });
 
+	// Phonetics enrichment runs in parallel with the translation and never
+	// blocks it: whichever source resolves first renders first, and the
+	// dictionary result replaces an interim LLM approximation.
+	let dictPhonetics: PhoneticsResult | null | undefined;
+	let llmIpa: string | undefined;
+	const renderPhonetics = () => {
+		if (!doc.contains(popover)) return;
+		popover.querySelector('.obsidian-translate-phonetics')?.remove();
+		const row = buildPhoneticsRow(doc, dictPhonetics ?? null, llmIpa);
+		if (row) header.after(row);
+	};
+	if (ctx.kind === 'word' && isEnglishWord(ctx.selectedText)) {
+		lookupPhonetics(ctx.selectedText).then(result => {
+			dictPhonetics = result;
+			renderPhonetics();
+		});
+	}
+
 	translateSelection(ctx, targetLanguage)
 		.then(result => {
-			if (doc.contains(popover)) renderResult(doc, popover, result);
+			if (!doc.contains(popover)) return;
+			renderResult(doc, popover, result);
+			if (result.ipa) {
+				llmIpa = result.ipa;
+				renderPhonetics();
+			}
 		})
 		.catch(error => {
 			console.error('Translation failed:', error);

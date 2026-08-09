@@ -1070,6 +1070,12 @@
 	"translationOtherMeanings": {
 		"message": "Also:"
 	},
+	"translationPhoneticsApprox": {
+		"message": "approx."
+	},
+	"translationPlayAudio": {
+		"message": "Play pronunciation"
+	},
 	"unknownProvider": {
 		"message": "Unknown provider"
 	},

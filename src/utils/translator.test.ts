@@ -74,6 +74,14 @@ describe('translateSelection (LLM engine)', () => {
 		expect(userContent).not.toContain('Money moves fast');
 	});
 
+	test('passes through an optional LLM-provided IPA (dictionary-miss fallback)', async () => {
+		proxyRepliesWith(JSON.stringify({ ...WORD_RESULT, ipa: '/bæŋk/' }));
+
+		const result = await translateSelection(CTX, 'zh');
+
+		expect(result.ipa).toBe('/bæŋk/');
+	});
+
 	test('tolerates a markdown-fenced JSON reply', async () => {
 		proxyRepliesWith('```json\n' + JSON.stringify(WORD_RESULT) + '\n```');
 
