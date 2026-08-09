@@ -1,0 +1,126 @@
+{
+	"description": "Word-level golden set for manual translation-quality review (fork issue #3, spec issue #1 §10.5). Each case is evaluated by hand against a live LLM engine whenever the word prompt or engine changes: the popover's contextual translation must match expectedSense (not the distractor). Target: ≥90% of cases pass. Not run in CI — requires a configured provider.",
+	"targetLanguage": "zh",
+	"cases": [
+		{
+			"id": "bank-finance",
+			"selection": "bank",
+			"sentence": "The bank raised interest rates yesterday.",
+			"title": "How Central Banks Work",
+			"expectedSense": "银行(金融机构)",
+			"distractor": "河岸"
+		},
+		{
+			"id": "bank-river",
+			"selection": "bank",
+			"sentence": "We had a picnic on the grassy bank of the river.",
+			"title": "A Walk Along the Thames",
+			"expectedSense": "河岸/堤岸",
+			"distractor": "银行"
+		},
+		{
+			"id": "draft-document",
+			"selection": "draft",
+			"sentence": "She sent me the first draft of the essay for feedback.",
+			"title": "Writing Better Essays",
+			"expectedSense": "草稿",
+			"distractor": "征兵/通风/汇票"
+		},
+		{
+			"id": "draft-air",
+			"selection": "draft",
+			"sentence": "Close the window — there is a cold draft coming in.",
+			"title": "Insulating an Old House",
+			"expectedSense": "穿堂风/贼风",
+			"distractor": "草稿"
+		},
+		{
+			"id": "patent-legal",
+			"selection": "patent",
+			"sentence": "The company filed a patent for its new battery design.",
+			"title": "Protecting Your Inventions",
+			"expectedSense": "专利",
+			"distractor": "显然的(形容词义)"
+		},
+		{
+			"id": "current-electric",
+			"selection": "current",
+			"sentence": "The current flowing through the wire heats the filament.",
+			"title": "Basic Circuit Theory",
+			"expectedSense": "电流",
+			"distractor": "当前的/水流"
+		},
+		{
+			"id": "current-time",
+			"selection": "current",
+			"sentence": "The current version of the app no longer supports that format.",
+			"title": "App Release Notes",
+			"expectedSense": "当前的/现行的",
+			"distractor": "电流"
+		},
+		{
+			"id": "interest-finance",
+			"selection": "interest",
+			"sentence": "The loan accrues interest at five percent a year.",
+			"title": "Understanding Loans",
+			"expectedSense": "利息",
+			"distractor": "兴趣"
+		},
+		{
+			"id": "interest-hobby",
+			"selection": "interest",
+			"sentence": "Photography has been a lifelong interest of hers.",
+			"title": "An Interview with the Artist",
+			"expectedSense": "兴趣/爱好",
+			"distractor": "利息"
+		},
+		{
+			"id": "cell-biology",
+			"selection": "cell",
+			"sentence": "Each cell contains a nucleus with genetic material.",
+			"title": "Introduction to Biology",
+			"expectedSense": "细胞",
+			"distractor": "牢房/电池"
+		},
+		{
+			"id": "cell-battery",
+			"selection": "cell",
+			"sentence": "The pack combines twelve lithium cells in series.",
+			"title": "Battery Pack Design",
+			"expectedSense": "电芯/电池单体",
+			"distractor": "细胞"
+		},
+		{
+			"id": "novel-adjective",
+			"selection": "novel",
+			"sentence": "The researchers proposed a novel approach to the problem.",
+			"title": "Advances in Machine Learning",
+			"expectedSense": "新颖的",
+			"distractor": "小说"
+		},
+		{
+			"id": "phrase-idiom",
+			"selection": "on the fence",
+			"sentence": "I'm still on the fence about switching editors.",
+			"title": "Choosing Your Tools",
+			"expectedSense": "犹豫不决/持观望态度",
+			"distractor": "在栅栏上(字面直译)"
+		},
+		{
+			"id": "phrase-collocation",
+			"selection": "interest rates",
+			"sentence": "Higher interest rates cooled the housing market.",
+			"title": "The Economy This Year",
+			"expectedSense": "利率",
+			"distractor": "兴趣比率(字面直译)"
+		},
+		{
+			"id": "negation-scope",
+			"selection": "hardly",
+			"sentence": "The changes were hardly noticeable to most users.",
+			"title": "UI Refresh Retrospective",
+			"expectedSense": "几乎不(否定含义)",
+			"distractor": "努力地/困难地"
+		}
+	]
+}

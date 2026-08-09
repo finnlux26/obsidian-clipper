@@ -2396,8 +2396,9 @@ export class Reader {
 	private static registerSelectionToHighlightButton(doc: Document) {
 		// Idempotent: if Reader.apply runs again without a page reload (e.g.
 		// SPA navigation where we re-enter reader), don't stack a second
-		// button + three more listeners on the same document.
-		if (doc.querySelector('.obsidian-selection-action')) return;
+		// button + three more listeners on the same document. The :not()
+		// excludes the translate button, which shares the base class.
+		if (doc.querySelector('.obsidian-selection-action:not(.obsidian-selection-translate)')) return;
 		const btn = doc.createElement('button');
 		btn.type = 'button';
 		btn.className = 'obsidian-selection-action';

@@ -67,6 +67,8 @@ export interface ReaderSettings {
 	pinPlayer: boolean;
 	autoScroll: boolean;
 	highlightActiveLine: boolean;
+	// Translation target language override; defaults to the UI language when unset
+	translationTargetLanguage?: string;
 	customCss: string;
 }
 

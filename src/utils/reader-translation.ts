@@ -3,6 +3,7 @@
 // context-aware translation of the selected word or phrase. Passage-length
 // selections are deferred to the paragraph-translation ticket.
 import browser from './browser-polyfill';
+import { generalSettings } from './storage-utils';
 import { getMessage } from './i18n';
 import { setElementHTML } from './dom-utils';
 import {
@@ -27,6 +28,10 @@ function setState(popover: HTMLElement, state: PopoverState) {
 }
 
 function getTargetLanguage(): string {
+	// Stored override first (no settings UI yet — a later ticket adds it),
+	// then the extension UI language, then the browser language
+	const override = generalSettings.readerSettings?.translationTargetLanguage;
+	if (override) return override;
 	const uiLanguage = (browser.i18n as { getUILanguage?: () => string }).getUILanguage?.();
 	return uiLanguage || navigator.language || 'en';
 }
@@ -44,7 +49,7 @@ function closePopover(doc: Document) {
 	doc.querySelector(`.${POPOVER_CLASS}`)?.remove();
 }
 
-function renderResult(doc: Document, popover: HTMLElement, ctx: SelectionContext, result: WordTranslation) {
+function renderResult(doc: Document, popover: HTMLElement, result: WordTranslation) {
 	const body = popover.querySelector('.obsidian-translate-body') as HTMLElement;
 	body.textContent = '';
 
@@ -149,23 +154,23 @@ export function openTranslationPopover(
 	const dismiss = () => {
 		doc.removeEventListener('keydown', onKeydown, true);
 		doc.removeEventListener('mousedown', onPointerDown, true);
+		doc.removeEventListener('touchstart', onPointerDown, true);
+		observer.disconnect();
 		popover.remove();
 	};
 	doc.addEventListener('keydown', onKeydown, true);
 	doc.addEventListener('mousedown', onPointerDown, true);
-	// Replacing this popover (closePopover) must also drop its listeners
+	doc.addEventListener('touchstart', onPointerDown, true);
+	// Replacing this popover from elsewhere (closePopover) must also drop
+	// its listeners — the observer catches removals that bypass dismiss()
 	const observer = new MutationObserver(() => {
-		if (!doc.contains(popover)) {
-			doc.removeEventListener('keydown', onKeydown, true);
-			doc.removeEventListener('mousedown', onPointerDown, true);
-			observer.disconnect();
-		}
+		if (!doc.contains(popover)) dismiss();
 	});
 	observer.observe(doc.body, { childList: true });
 
 	translateSelection(ctx, targetLanguage)
 		.then(result => {
-			if (doc.contains(popover)) renderResult(doc, popover, ctx, result);
+			if (doc.contains(popover)) renderResult(doc, popover, result);
 		})
 		.catch(error => {
 			console.error('Translation failed:', error);

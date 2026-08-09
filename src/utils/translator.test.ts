@@ -92,6 +92,19 @@ describe('translateSelection (LLM engine)', () => {
 		expect(sendMessage).toHaveBeenCalledTimes(1);
 	});
 
+	test('concurrent requests for the same selection share one network call', async () => {
+		proxyRepliesWith(JSON.stringify(WORD_RESULT));
+
+		const [a, b] = await Promise.all([
+			translateSelection(CTX, 'zh'),
+			translateSelection(CTX, 'zh')
+		]);
+
+		expect(a).toEqual(WORD_RESULT);
+		expect(b).toEqual(WORD_RESULT);
+		expect(sendMessage).toHaveBeenCalledTimes(1);
+	});
+
 	test('a different target language misses the cache', async () => {
 		proxyRepliesWith(JSON.stringify(WORD_RESULT));
 
