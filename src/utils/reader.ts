@@ -2,7 +2,7 @@ import Defuddle from 'defuddle/full';
 import browser from './browser-polyfill';
 import { detectBrowser } from './browser-detection';
 import { flattenShadowDom as flattenShadowDomUtil } from './flatten-shadow-dom';
-import { getLocalStorage, setLocalStorage } from './storage-utils';
+import { getLocalStorage, setLocalStorage, loadSettings as loadGeneralSettings } from './storage-utils';
 import hljs from 'highlight.js';
 import { getDomain } from './string-utils';
 import type { HighlighterAPI } from './highlighter';
@@ -1994,6 +1994,13 @@ export class Reader {
 
 			// Load saved settings
 			await this.loadSettings();
+
+			// Populate generalSettings in this bundle: the reader script is
+			// its own webpack bundle with its own storage-utils instance, so
+			// the settings loaded by content.js are not visible here. The
+			// translation engine (translator.ts) reads interpreter settings
+			// from generalSettings and would otherwise always see defaults.
+			await loadGeneralSettings();
 
 			// Capture YouTube video state before cleanup destroys the player
 			let videoTimestamp = 0;
