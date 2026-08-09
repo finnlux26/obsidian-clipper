@@ -27,12 +27,14 @@
 		"dev": "npm run dev:chrome",
 		"test": "vitest run",
 		"test:watch": "vitest",
+		"test:e2e": "npm run build:chrome && playwright test",
 		"update-locales": "ts-node --project scripts/tsconfig.json scripts/update-locales.ts",
 		"check-strings": "ts-node --project scripts/tsconfig.json scripts/check-unused-strings.ts",
 		"add-locale": "ts-node --project scripts/tsconfig.json scripts/add-locale.ts",
 		"prepublishOnly": "npm run build:cli && npm run build:api"
 	},
 	"devDependencies": {
+		"@playwright/test": "^1.62.1",
 		"@types/chrome": "^0.0.270",
 		"@types/dompurify": "^3.0.5",
 		"@types/node": "^25.4.0",

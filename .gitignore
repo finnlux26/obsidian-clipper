@@ -16,6 +16,10 @@ builds/
 changelogs/
 assets/shared
 
+# Playwright
+test-results/
+playwright-report/
+
 # Xcode
 *.xcuserstate
 *.xcuserdatad
