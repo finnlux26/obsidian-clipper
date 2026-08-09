@@ -920,11 +920,11 @@
 	"saveBehaviorLabel": {
 		"message": "Save behavior"
 	},
-	"saved": {
-		"message": "Saved"
-	},
 	"saveFile": {
 		"message": "Save file..."
+	},
+	"saved": {
+		"message": "Saved"
 	},
 	"searchHighlightsPlaceholder": {
 		"message": "Search highlights…"
@@ -1054,6 +1054,21 @@
 	},
 	"thinking": {
 		"message": "thinking"
+	},
+	"translateSelection": {
+		"message": "Translate"
+	},
+	"translationFailed": {
+		"message": "Translation failed. Please try again."
+	},
+	"translationLoading": {
+		"message": "Translating…"
+	},
+	"translationNoEngine": {
+		"message": "Set up an Interpreter model in settings to enable translation."
+	},
+	"translationOtherMeanings": {
+		"message": "Also:"
 	},
 	"unknownProvider": {
 		"message": "Unknown provider"

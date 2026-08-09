@@ -37,6 +37,7 @@ const VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=1';
 
 import { ReaderSettings } from '../types/types';
 import { wireTranscript } from './reader-transcript';
+import { registerSelectionTranslation } from './reader-translation';
 
 interface ReaderContent {
 	content: string;
@@ -2234,6 +2235,10 @@ export class Reader {
 			// user makes a normal text selection inside the article, surface a
 			// floating button that converts the selection into a highlight.
 			Reader.registerSelectionToHighlightButton(doc);
+
+			// Selection → translate affordance (word/phrase). Registered after
+			// the highlight button so it can position itself relative to it.
+			registerSelectionTranslation(doc, () => Reader.isActive);
 
 			// Set up color scheme media query listener
 			this.colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
