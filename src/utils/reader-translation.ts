@@ -78,7 +78,7 @@ function setState(popover: HTMLElement, state: PopoverState) {
 	popover.setAttribute('data-state', state);
 }
 
-function getTargetLanguage(): string {
+export function getTargetLanguage(): string {
 	// Stored override first (no settings UI yet — a later ticket adds it),
 	// then the extension UI language, then the browser language
 	const override = generalSettings.readerSettings?.translationTargetLanguage;
@@ -87,7 +87,7 @@ function getTargetLanguage(): string {
 	return uiLanguage || navigator.language || 'en';
 }
 
-function articleMetaFromDocument(doc: Document): ArticleMeta {
+export function articleMetaFromDocument(doc: Document): ArticleMeta {
 	const heading = doc.querySelector('.obsidian-reader-content article h1');
 	return {
 		title: heading?.textContent?.trim() || doc.title || '',

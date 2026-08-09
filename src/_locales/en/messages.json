@@ -1055,6 +1055,9 @@
 	"thinking": {
 		"message": "thinking"
 	},
+	"translateFullArticle": {
+		"message": "Translate article"
+	},
 	"translateSelection": {
 		"message": "Translate"
 	},

@@ -66,6 +66,25 @@ const WORD_SYSTEM_PROMPT =
 	'"otherCommonMeanings" (array of up to 3 other common translations, empty array if none), ' +
 	'"ipa" (IPA transcription of the selection if you are confident it is correct, empty string otherwise).';
 
+export interface GlossaryEntry {
+	source: string;
+	target: string;
+}
+
+export interface BatchTranslationResult {
+	// Aligned with the input paragraphs; undefined = the model skipped it
+	translations: Array<string | undefined>;
+	keyTerms: GlossaryEntry[];
+}
+
+const BATCH_SYSTEM_PROMPT =
+	'You are a precise translator embedded in a reading tool. ' +
+	'Translate each numbered paragraph into the target language, preserving the numbering. ' +
+	'Keep terminology consistent across paragraphs; when a glossary is provided, use those translations verbatim. ' +
+	'Respond with a single JSON object only — no markdown fences, no commentary: ' +
+	'{"translations": {"1": "...", "2": "..."}, "keyTerms": [{"source": "...", "target": "..."}]}. ' +
+	'keyTerms lists up to 8 recurring domain terms from this batch with the translation you used (empty array if none).';
+
 const PASSAGE_SYSTEM_PROMPT =
 	'You are a precise translator embedded in a reading tool. ' +
 	'Translate ONLY the content between <text> and </text> into the target language. ' +
@@ -266,6 +285,93 @@ class BrowserTranslationEngine implements TranslationEngine {
 		const translator = await this.instance(source, target);
 		return { translation: await translator.translate(text) };
 	}
+
+	async translateText(text: string, articleLang: string, targetLanguage: string): Promise<string> {
+		const target = primaryLanguage(targetLanguage);
+		if (!target) {
+			throw new TranslationUnavailableError('No target language configured.');
+		}
+		const source = primaryLanguage(articleLang) || 'en';
+		if (source === target) return text;
+		const translator = await this.instance(source, target);
+		return translator.translate(text);
+	}
+}
+
+// Batch translation for the full-article mode (LLM path). Kept outside the
+// TranslationEngine interface: batching, numbering and the glossary protocol
+// are full-article concerns, not per-selection ones.
+export async function translateBatchLlm(
+	paragraphs: string[],
+	targetLanguage: string,
+	article: import('./translator-context').ArticleMeta,
+	glossary: GlossaryEntry[]
+): Promise<BatchTranslationResult> {
+	const target = resolveLlmTarget();
+	if (!target) {
+		throw new TranslationUnavailableError('No translation engine is configured.');
+	}
+
+	const lines = [
+		`Article: "${article.title}" (${article.site}, ${article.lang || 'unknown language'})`,
+		`Target language: ${targetLanguage}`
+	];
+	if (glossary.length > 0) {
+		lines.push('Glossary (use these translations verbatim):');
+		for (const term of glossary) {
+			lines.push(`- ${term.source} → ${term.target}`);
+		}
+	}
+	const context = lines.join('\n');
+	const payload = paragraphs.map((text, i) => `[${i + 1}] ${text}`).join('\n\n');
+
+	const content = await sendChatRequest(target.provider, target.model, {
+		system: BATCH_SYSTEM_PROMPT,
+		context,
+		payload
+	});
+
+	const unfenced = stripCodeFences(content);
+	let parsed: any;
+	try {
+		parsed = JSON.parse(unfenced);
+	} catch {
+		const match = unfenced.match(/\{[\s\S]*\}/);
+		if (!match) {
+			throw new Error('The model returned a response that could not be parsed.');
+		}
+		parsed = JSON.parse(match[0]);
+	}
+	const rawTranslations = parsed?.translations;
+	if (!rawTranslations || typeof rawTranslations !== 'object') {
+		throw new Error('The model response did not contain translations.');
+	}
+	const translations = paragraphs.map((_, i) => {
+		const value = rawTranslations[String(i + 1)];
+		return typeof value === 'string' && value ? value : undefined;
+	});
+	const keyTerms: GlossaryEntry[] = Array.isArray(parsed.keyTerms)
+		? parsed.keyTerms.filter((t: any) => t && typeof t.source === 'string' && typeof t.target === 'string')
+		: [];
+	return { translations, keyTerms };
+}
+
+// Direct text translation via the browser engine, for the full-article mode
+// (local, free, per-block; no batching or glossary needed)
+export function browserTranslateText(text: string, articleLang: string, targetLanguage: string): Promise<string> {
+	return browserEngine.translateText(text, articleLang, targetLanguage);
+}
+
+export function hasBrowserTranslator(): boolean {
+	return !!getBrowserTranslatorGlobal();
+}
+
+// Full-article engine preference is reversed from selection dispatch: the
+// local browser engine wins on throughput/cost; the LLM is the fallback.
+export function getFullTextEngineKind(): 'browser' | 'llm' | null {
+	if (getBrowserTranslatorGlobal()) return 'browser';
+	if (resolveLlmTarget()) return 'llm';
+	return null;
 }
 
 const llmEngine = new LlmTranslationEngine();

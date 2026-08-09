@@ -37,7 +37,12 @@ const VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=1';
 
 import { ReaderSettings } from '../types/types';
 import { wireTranscript } from './reader-transcript';
-import { registerSelectionTranslation } from './reader-translation';
+import { registerSelectionTranslation, getTargetLanguage, articleMetaFromDocument } from './reader-translation';
+import {
+	createFullTranslationNavButton,
+	enableFullTranslation,
+	wasFullTranslationEnabled
+} from './reader-full-translation';
 
 interface ReaderContent {
 	content: string;
@@ -335,10 +340,19 @@ export class Reader {
 
 		doc.body.appendChild(outlineOverlay);
 
+		// Full-article bilingual toggle
+		const fullTranslationOpts = () => ({
+			targetLanguage: getTargetLanguage(),
+			article: articleMetaFromDocument(doc),
+			url: doc.location?.href || ''
+		});
+		const translateBtn = createFullTranslationNavButton(doc, fullTranslationOpts);
+
 		const triggerGroup = doc.createElement('div');
 		triggerGroup.className = 'obsidian-reader-nav';
 		triggerGroup.appendChild(outlineBtn);
 		triggerGroup.appendChild(highlighterBtn);
+		triggerGroup.appendChild(translateBtn);
 		triggerGroup.appendChild(clipButton);
 		triggerGroup.appendChild(trigger);
 		triggerGroup.appendChild(addToObsidianBtn);
@@ -2246,6 +2260,21 @@ export class Reader {
 			// Selection → translate affordance (word/phrase). Registered after
 			// the highlight button so it can position itself relative to it.
 			registerSelectionTranslation(doc, () => Reader.isActive);
+
+			// Restore full-article translation if it was on for this URL
+			const currentUrl = doc.location?.href || '';
+			if (currentUrl) {
+				wasFullTranslationEnabled(currentUrl).then(enabled => {
+					if (enabled && Reader.isActive) {
+						enableFullTranslation(doc, {
+							targetLanguage: getTargetLanguage(),
+							article: articleMetaFromDocument(doc),
+							url: currentUrl
+						});
+						doc.querySelector('.nav-btn-translate')?.classList.add('is-active');
+					}
+				}).catch(() => {});
+			}
 
 			// Set up color scheme media query listener
 			this.colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');

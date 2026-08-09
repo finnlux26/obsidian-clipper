@@ -4,7 +4,7 @@
 // structured translation that comes back. No internal mocking.
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import browser from './browser-polyfill';
-import { translateSelection, translatePassage, TranslationUnavailableError, clearTranslationCache } from './translator';
+import { translateSelection, translatePassage, translateBatchLlm, TranslationUnavailableError, clearTranslationCache } from './translator';
 import { generalSettings } from './storage-utils';
 import { SelectionContext } from './translator-context';
 
@@ -188,6 +188,76 @@ describe('translateSelection (LLM engine)', () => {
 		proxyRepliesWith(JSON.stringify(WORD_RESULT));
 		const retry = await translateSelection(CTX, 'zh');
 		expect(retry.translation).toBe('银行');
+	});
+});
+
+describe('translateBatchLlm (full-article batches)', () => {
+	const sendMessage = vi.spyOn(browser.runtime, 'sendMessage');
+	const ARTICLE = CTX.article;
+
+	beforeEach(() => {
+		sendMessage.mockReset();
+		clearTranslationCache();
+		configureLlm();
+	});
+
+	function proxyRepliesWith(payloadText: string) {
+		sendMessage.mockResolvedValue({
+			ok: true,
+			status: 200,
+			text: JSON.stringify({
+				content: [{ type: 'text', text: payloadText }],
+				stop_reason: 'end_turn'
+			})
+		});
+	}
+
+	test('numbered paragraphs go out, translations come back aligned by number', async () => {
+		proxyRepliesWith(JSON.stringify({
+			translations: { '1': '第一段。', '2': '第二段。' },
+			keyTerms: [{ source: 'interest rate', target: '利率' }]
+		}));
+
+		const result = await translateBatchLlm(
+			['First paragraph.', 'Second paragraph.'],
+			'zh', ARTICLE, []
+		);
+
+		expect(result.translations).toEqual(['第一段。', '第二段。']);
+		expect(result.keyTerms).toEqual([{ source: 'interest rate', target: '利率' }]);
+		const body = JSON.parse((sendMessage.mock.calls[0][0] as any).options.body);
+		const userContent = body.messages.map((m: { content: string }) => m.content).join('\n');
+		expect(userContent).toContain('[1] First paragraph.');
+		expect(userContent).toContain('[2] Second paragraph.');
+	});
+
+	test('an established glossary is injected into the prompt', async () => {
+		proxyRepliesWith(JSON.stringify({ translations: { '1': 'x' } }));
+
+		await translateBatchLlm(['Text about transformers.'], 'zh', ARTICLE, [
+			{ source: 'transformer', target: '变换器' }
+		]);
+
+		const body = JSON.parse((sendMessage.mock.calls[0][0] as any).options.body);
+		const userContent = body.messages.map((m: { content: string }) => m.content).join('\n');
+		expect(userContent).toContain('transformer');
+		expect(userContent).toContain('变换器');
+	});
+
+	test('missing numbers come back undefined instead of shifting alignment', async () => {
+		proxyRepliesWith(JSON.stringify({ translations: { '1': '一', '3': '三' } }));
+
+		const result = await translateBatchLlm(['a', 'b', 'c'], 'zh', ARTICLE, []);
+
+		expect(result.translations).toEqual(['一', undefined, '三']);
+	});
+
+	test('a reply without keyTerms yields an empty glossary delta', async () => {
+		proxyRepliesWith(JSON.stringify({ translations: { '1': '一' } }));
+
+		const result = await translateBatchLlm(['a'], 'zh', ARTICLE, []);
+
+		expect(result.keyTerms).toEqual([]);
 	});
 });
 
