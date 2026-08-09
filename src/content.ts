@@ -211,14 +211,26 @@ declare global {
 					selectedHtml = serializeChildren(div);
 				}
 
+				// Temporarily detach reader translation comparison nodes so the
+				// clip captures the original article only; restored right after
+				// parsing (brief visual gap is acceptable during a clip)
+				const translationNodes = Array.from(document.querySelectorAll('.obsidian-reader-translation'))
+					.map(node => ({ node, parent: node.parentNode!, next: node.nextSibling }));
+				translationNodes.forEach(({ node }) => node.remove());
+
 				// Use parseAsync to ensure async variables like {{transcript}} are available.
 				// If it hangs (e.g. another extension has corrupted fetch), fall back to sync parse.
 				const defuddle = new Defuddle(document, { url: document.URL });
 				const parseTimeout = new Promise<never>((_, reject) =>
 					setTimeout(() => reject(new Error('parseAsync timeout')), 8000)
 				);
-				const defuddled = await Promise.race([defuddle.parseAsync(), parseTimeout])
-					.catch(() => defuddle.parse());
+				let defuddled;
+				try {
+					defuddled = await Promise.race([defuddle.parseAsync(), parseTimeout])
+						.catch(() => defuddle.parse());
+				} finally {
+					translationNodes.forEach(({ node, parent, next }) => parent.insertBefore(node, next));
+				}
 				const extractedContent: { [key: string]: string } = {
 					...defuddled.variables,
 				};

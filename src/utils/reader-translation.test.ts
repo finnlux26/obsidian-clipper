@@ -15,6 +15,7 @@ const CTX: SelectionContext = {
 	kind: 'word',
 	sentence: 'The bank raised interest rates yesterday.',
 	paragraph: 'The bank raised interest rates yesterday.',
+	neighbors: {},
 	article: { title: 'How Banks Work', site: 'example.com', lang: 'en' }
 };
 
@@ -71,9 +72,9 @@ describe('shouldOfferTranslation', () => {
 		expect(shouldOfferTranslation(sel, document)).toBe(true);
 	});
 
-	test('not offered for a passage-length selection (deferred to a later ticket)', () => {
+	test('offered for a passage-length selection', () => {
 		const sel = selectInArticle('The bank raised interest rates yesterday. Everyone noticed');
-		expect(shouldOfferTranslation(sel, document)).toBe(false);
+		expect(shouldOfferTranslation(sel, document)).toBe(true);
 	});
 
 	test('not offered outside the reader article', () => {
@@ -281,6 +282,72 @@ describe('openTranslationPopover', () => {
 
 		const urls = sendMessage.mock.calls.map(c => String((c[0] as any).url));
 		expect(urls.some(u => u.includes('dictionaryapi') || u.includes('/entries/'))).toBe(false);
+	});
+
+	function passageCtxFromDom(): SelectionContext {
+		const block = document.querySelector('.obsidian-reader-content article p') as HTMLElement;
+		return {
+			selectedText: 'The bank raised interest rates yesterday. Everyone noticed the change immediately.',
+			kind: 'passage',
+			sentence: 'The bank raised interest rates yesterday.',
+			paragraph: block.textContent!.trim(),
+			neighbors: {},
+			article: CTX.article,
+			blockElement: block
+		};
+	}
+
+	test('passage popover renders the translation with an insert-as-comparison action', async () => {
+		proxyRepliesWith({ translation: '银行昨天加息了。所有人立刻注意到了变化。' });
+
+		const popover = openTranslationPopover(document, passageCtxFromDom(), 'zh');
+
+		await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+		expect(popover.textContent).toContain('银行昨天加息了');
+		expect(popover.querySelector('button.obsidian-translate-insert')).not.toBeNull();
+	});
+
+	test('insert-as-comparison adds a sibling node and leaves the original untouched', async () => {
+		proxyRepliesWith({ translation: '译文段落。' });
+		const ctx = passageCtxFromDom();
+		const originalOuterHtml = ctx.blockElement!.outerHTML;
+
+		const popover = openTranslationPopover(document, ctx, 'zh');
+		await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+		(popover.querySelector('button.obsidian-translate-insert') as HTMLButtonElement).click();
+
+		const inserted = ctx.blockElement!.nextElementSibling as HTMLElement;
+		expect(inserted.classList.contains('obsidian-reader-translation')).toBe(true);
+		expect(inserted.getAttribute('data-src-hash')).toBeTruthy();
+		expect(inserted.textContent).toBe('译文段落。');
+		// The original paragraph node is byte-identical — highlight anchors survive
+		expect(ctx.blockElement!.outerHTML).toBe(originalOuterHtml);
+	});
+
+	test('inserting twice does not duplicate the comparison node', async () => {
+		proxyRepliesWith({ translation: '译文段落。' });
+		const ctx = passageCtxFromDom();
+
+		const popover = openTranslationPopover(document, ctx, 'zh');
+		await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+		const btn = popover.querySelector('button.obsidian-translate-insert') as HTMLButtonElement;
+		btn.click();
+		btn.click();
+
+		expect(document.querySelectorAll('.obsidian-reader-translation')).toHaveLength(1);
+	});
+
+	test('over-long passage selections get a split hint instead of a silent truncation', async () => {
+		proxyRepliesWith({ translation: 'x' });
+		const ctx = { ...passageCtxFromDom(), selectedText: 'y'.repeat(3200) };
+
+		const popover = openTranslationPopover(document, ctx, 'zh');
+
+		await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('error'));
+		expect(popover.textContent).toContain('too long');
+		const llmCalls = sendMessage.mock.calls
+			.filter(c => String((c[0] as any).url).includes('api.anthropic.com'));
+		expect(llmCalls).toHaveLength(0);
 	});
 
 	test('Escape closes the popover', async () => {

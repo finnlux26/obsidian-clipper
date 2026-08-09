@@ -1061,6 +1061,12 @@
 	"translationFailed": {
 		"message": "Translation failed. Please try again."
 	},
+	"translationInsert": {
+		"message": "Insert below paragraph"
+	},
+	"translationInserted": {
+		"message": "Inserted"
+	},
 	"translationLoading": {
 		"message": "Translating…"
 	},
@@ -1075,6 +1081,9 @@
 	},
 	"translationPlayAudio": {
 		"message": "Play pronunciation"
+	},
+	"translationTooLong": {
+		"message": "Selection is too long — translate one paragraph at a time."
 	},
 	"unknownProvider": {
 		"message": "Unknown provider"

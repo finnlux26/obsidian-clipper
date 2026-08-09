@@ -1,7 +1,7 @@
 // Reader translation UI (fork issue #3): a floating "Translate" button next
 // to the existing highlight affordance, and a popover that shows the
-// context-aware translation of the selected word or phrase. Passage-length
-// selections are deferred to the paragraph-translation ticket.
+// context-aware translation of the selection: word/phrase popovers with
+// phonetics, and passage translation with insert-as-comparison (issue #6).
 import browser from './browser-polyfill';
 import { generalSettings } from './storage-utils';
 import { getMessage } from './i18n';
@@ -12,14 +12,62 @@ import {
 	extractSelectionContext
 } from './translator-context';
 import {
+	PassageTranslation,
 	TranslationUnavailableError,
 	WordTranslation,
+	translatePassage,
 	translateSelection
 } from './translator';
 import { PhoneticsResult, isEnglishWord, lookupPhonetics } from './dictionary';
 
 const POPOVER_CLASS = 'obsidian-translate-popover';
 const BUTTON_CLASS = 'obsidian-selection-translate';
+const TRANSLATION_NODE_CLASS = 'obsidian-reader-translation';
+
+// Passage selections longer than this get a "split it up" hint instead of a
+// silently truncated (and mischarged) request
+const MAX_PASSAGE_CHARS = 3000;
+
+// Stable content hash for comparison nodes (djb2, hex)
+export function hashText(text: string): string {
+	let hash = 5381;
+	for (let i = 0; i < text.length; i++) {
+		hash = ((hash << 5) + hash + text.charCodeAt(i)) | 0;
+	}
+	return (hash >>> 0).toString(16);
+}
+
+// Blocks whose siblings carry structural meaning (list numbering, table
+// layout) get the comparison appended inside instead of beside them
+const APPEND_INSIDE_TAGS = new Set(['LI', 'TD', 'TH', 'DD', 'DT']);
+
+// Insert the translated paragraph as a comparison node. The original block
+// node is never modified — highlight anchors must survive. Idempotent per
+// source-paragraph hash.
+export function insertComparisonNode(doc: Document, ctx: SelectionContext, translation: string): HTMLElement | null {
+	const block = ctx.blockElement;
+	if (!block || !doc.contains(block)) return null;
+	const hash = hashText(ctx.paragraph);
+
+	const appendInside = APPEND_INSIDE_TAGS.has(block.tagName);
+	const existing = appendInside
+		? block.querySelector(`:scope > .${TRANSLATION_NODE_CLASS}[data-src-hash="${hash}"]`)
+		: block.nextElementSibling?.matches(`.${TRANSLATION_NODE_CLASS}[data-src-hash="${hash}"]`)
+			? block.nextElementSibling
+			: null;
+	if (existing) return existing as HTMLElement;
+
+	const node = doc.createElement(appendInside ? 'div' : (block.tagName === 'P' ? 'p' : 'div'));
+	node.className = TRANSLATION_NODE_CLASS;
+	node.setAttribute('data-src-hash', hash);
+	node.textContent = translation;
+	if (appendInside) {
+		block.appendChild(node);
+	} else {
+		block.after(node);
+	}
+	return node;
+}
 
 // data-state drives both styling and (later) E2E waits: pending | done | error
 type PopoverState = 'pending' | 'done' | 'error';
@@ -153,11 +201,49 @@ function renderResult(doc: Document, popover: HTMLElement, result: WordTranslati
 	setState(popover, 'done');
 }
 
+function renderPassageResult(
+	doc: Document,
+	popover: HTMLElement,
+	ctx: SelectionContext,
+	result: PassageTranslation
+) {
+	const body = popover.querySelector('.obsidian-translate-body') as HTMLElement;
+	body.textContent = '';
+
+	const text = doc.createElement('div');
+	text.className = 'obsidian-translate-passage';
+	text.textContent = result.translation;
+	body.appendChild(text);
+
+	if (ctx.blockElement) {
+		const insert = doc.createElement('button');
+		insert.type = 'button';
+		insert.className = 'obsidian-translate-insert';
+		insert.textContent = getMessage('translationInsert');
+		insert.addEventListener('click', () => {
+			const node = insertComparisonNode(doc, ctx, result.translation);
+			if (node) {
+				insert.textContent = getMessage('translationInserted');
+				insert.disabled = true;
+			}
+		});
+		body.appendChild(insert);
+	}
+
+	setState(popover, 'done');
+}
+
 function renderError(popover: HTMLElement, error: unknown) {
 	const body = popover.querySelector('.obsidian-translate-body') as HTMLElement;
 	body.textContent = error instanceof TranslationUnavailableError
 		? getMessage('translationNoEngine')
 		: getMessage('translationFailed');
+	setState(popover, 'error');
+}
+
+function renderTooLong(popover: HTMLElement) {
+	const body = popover.querySelector('.obsidian-translate-body') as HTMLElement;
+	body.textContent = getMessage('translationTooLong');
 	setState(popover, 'error');
 }
 
@@ -227,6 +313,22 @@ export function openTranslationPopover(
 	});
 	observer.observe(doc.body, { childList: true });
 
+	if (ctx.kind === 'passage') {
+		if (ctx.selectedText.length > MAX_PASSAGE_CHARS) {
+			renderTooLong(popover);
+			return popover;
+		}
+		translatePassage(ctx, targetLanguage)
+			.then(result => {
+				if (doc.contains(popover)) renderPassageResult(doc, popover, ctx, result);
+			})
+			.catch(error => {
+				console.error('Translation failed:', error);
+				if (doc.contains(popover)) renderError(popover, error);
+			});
+		return popover;
+	}
+
 	// Phonetics enrichment runs in parallel with the translation and never
 	// blocks it: whichever source resolves first renders first, and the
 	// dictionary result replaces an interim LLM approximation.
@@ -271,7 +373,7 @@ export function shouldOfferTranslation(selection: Selection | null, doc: Documen
 	const range = selection.getRangeAt(0);
 	if (!article.contains(range.commonAncestorContainer)) return false;
 	const ctx = extractSelectionContext(selection, articleMetaFromDocument(doc));
-	return ctx !== null && (ctx.kind === 'word' || ctx.kind === 'phrase');
+	return ctx !== null;
 }
 
 // Floating "Translate" button that appears next to the highlight button on

@@ -23,6 +23,10 @@ export interface TranslateWordRequest {
 	targetLanguage: string;
 }
 
+export interface PassageTranslation {
+	translation: string;
+}
+
 // The engine could not run at all (nothing configured). UI shows an
 // actionable "configure the Interpreter" message for this one.
 export class TranslationUnavailableError extends Error {}
@@ -31,6 +35,7 @@ export interface TranslationEngine {
 	id: 'browser' | 'llm';
 	available(): Promise<boolean>;
 	translateWord(request: TranslateWordRequest): Promise<WordTranslation>;
+	translatePassage(request: TranslateWordRequest): Promise<PassageTranslation>;
 }
 
 interface LlmTarget {
@@ -57,6 +62,13 @@ const WORD_SYSTEM_PROMPT =
 	'"meaningInContext" (one short sentence in the target language explaining what the selection means in this sentence), ' +
 	'"otherCommonMeanings" (array of up to 3 other common translations, empty array if none), ' +
 	'"ipa" (IPA transcription of the selection if you are confident it is correct, empty string otherwise).';
+
+const PASSAGE_SYSTEM_PROMPT =
+	'You are a precise translator embedded in a reading tool. ' +
+	'Translate ONLY the content between <text> and </text> into the target language. ' +
+	'The neighboring paragraphs are reference context for pronouns and terminology — do NOT translate them and do NOT include them in your output. ' +
+	'Keep terminology consistent with the context. ' +
+	'Respond with a single JSON object only — no markdown fences, no commentary: {"translation": "..."}.';
 
 function stripCodeFences(text: string): string {
 	return text
@@ -91,6 +103,24 @@ function parseWordTranslation(content: string): WordTranslation {
 	};
 }
 
+function parsePassageTranslation(content: string): PassageTranslation {
+	const unfenced = stripCodeFences(content);
+	let parsed: any;
+	try {
+		parsed = JSON.parse(unfenced);
+	} catch {
+		const match = unfenced.match(/\{[\s\S]*\}/);
+		if (!match) {
+			throw new Error('The model returned a response that could not be parsed.');
+		}
+		parsed = JSON.parse(match[0]);
+	}
+	if (!parsed || typeof parsed.translation !== 'string' || !parsed.translation) {
+		throw new Error('The model response did not contain a translation.');
+	}
+	return { translation: parsed.translation };
+}
+
 class LlmTranslationEngine implements TranslationEngine {
 	id = 'llm' as const;
 
@@ -122,6 +152,34 @@ class LlmTranslationEngine implements TranslationEngine {
 		});
 		return parseWordTranslation(content);
 	}
+
+	async translatePassage(request: TranslateWordRequest): Promise<PassageTranslation> {
+		const target = resolveLlmTarget();
+		if (!target) {
+			throw new TranslationUnavailableError('No translation engine is configured.');
+		}
+		const { ctx, targetLanguage } = request;
+
+		// Passage context budget: ±1 neighboring paragraph, already truncated
+		// at extraction time (see spec issue #1)
+		const lines = [`Article: "${ctx.article.title}" (${ctx.article.site}, ${ctx.article.lang || 'unknown language'})`];
+		if (ctx.neighbors.before) {
+			lines.push(`Previous paragraph (reference only, do not translate): "${ctx.neighbors.before}"`);
+		}
+		if (ctx.neighbors.after) {
+			lines.push(`Next paragraph (reference only, do not translate): "${ctx.neighbors.after}"`);
+		}
+		lines.push(`Target language: ${targetLanguage}`);
+		const context = lines.join('\n');
+		const payload = `<text>\n${ctx.selectedText}\n</text>`;
+
+		const content = await sendChatRequest(target.provider, target.model, {
+			system: PASSAGE_SYSTEM_PROMPT,
+			context,
+			payload
+		});
+		return parsePassageTranslation(content);
+	}
 }
 
 const llmEngine = new LlmTranslationEngine();
@@ -138,6 +196,7 @@ const translationCache = new Map<string, Promise<WordTranslation>>();
 
 export function clearTranslationCache(): void {
 	translationCache.clear();
+	passageCache.clear();
 }
 
 export function translateSelection(ctx: SelectionContext, targetLanguage: string): Promise<WordTranslation> {
@@ -158,5 +217,28 @@ export function translateSelection(ctx: SelectionContext, targetLanguage: string
 	})();
 	translationCache.set(cacheKey, pending);
 	pending.catch(() => translationCache.delete(cacheKey));
+	return pending;
+}
+
+const passageCache = new Map<string, Promise<PassageTranslation>>();
+
+export function translatePassage(ctx: SelectionContext, targetLanguage: string): Promise<PassageTranslation> {
+	const engine = getTranslationEngine();
+
+	const cacheKey = [engine.id, targetLanguage, 'passage', ctx.selectedText].join('\u0000');
+	const cached = passageCache.get(cacheKey);
+	if (cached) {
+		debugLog('Translator', 'Passage cache hit');
+		return cached;
+	}
+
+	const pending = (async () => {
+		if (!(await engine.available())) {
+			throw new TranslationUnavailableError('No translation engine is configured.');
+		}
+		return engine.translatePassage({ ctx, targetLanguage });
+	})();
+	passageCache.set(cacheKey, pending);
+	pending.catch(() => passageCache.delete(cacheKey));
 	return pending;
 }

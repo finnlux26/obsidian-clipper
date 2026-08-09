@@ -17,10 +17,19 @@ export interface SelectionContext {
 	kind: SelectionKind;
 	sentence: string;
 	paragraph: string;
+	// Adjacent blocks, reference context for passage translation (truncated)
+	neighbors: { before?: string; after?: string };
 	article: ArticleMeta;
+	// Containing block, used to insert the comparison node next to it
+	blockElement?: HTMLElement;
 }
 
 const BLOCK_SELECTOR = 'p, li, blockquote, td, th, h1, h2, h3, h4, h5, h6, figcaption, dd, dt, pre';
+
+// Inserted comparison nodes are never original content
+const TRANSLATION_NODE_CLASS = 'obsidian-reader-translation';
+
+const NEIGHBOR_MAX_CHARS = 500;
 
 // Selections longer than this are a passage no matter the word count
 const PASSAGE_CHAR_THRESHOLD = 300;
@@ -119,6 +128,7 @@ export function extractSelectionContext(selection: Selection, article: ArticleMe
 			kind: classifySelection(selectedText),
 			sentence: selectedText,
 			paragraph: selectedText,
+			neighbors: {},
 			article
 		};
 	}
@@ -150,6 +160,32 @@ export function extractSelectionContext(selection: Selection, article: ArticleMe
 		kind: classifySelection(selectedText),
 		sentence: collapseWhitespace(blockText.slice(sentenceStart, sentenceEnd)),
 		paragraph: collapseWhitespace(blockText),
-		article
+		neighbors: {
+			before: neighborText(block, 'previousElementSibling'),
+			after: neighborText(block, 'nextElementSibling')
+		},
+		article,
+		blockElement: block
 	};
+}
+
+// Walk sibling blocks in the given direction, skipping inserted translation
+// nodes, and return the first real neighbor's text (truncated)
+function neighborText(
+	block: HTMLElement,
+	direction: 'previousElementSibling' | 'nextElementSibling'
+): string | undefined {
+	let el = block[direction] as HTMLElement | null;
+	while (el) {
+		if (!el.classList.contains(TRANSLATION_NODE_CLASS) && el.matches(BLOCK_SELECTOR)) {
+			const text = collapseWhitespace(el.textContent || '');
+			if (text) return text.slice(0, NEIGHBOR_MAX_CHARS);
+			return undefined;
+		}
+		if (!el.classList.contains(TRANSLATION_NODE_CLASS) && !el.matches(BLOCK_SELECTOR)) {
+			return undefined;
+		}
+		el = el[direction] as HTMLElement | null;
+	}
+	return undefined;
 }

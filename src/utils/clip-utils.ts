@@ -15,6 +15,10 @@ export function parseForClip(doc: Document) {
 				...Array.from(readerArticle.childNodes).map(n => readerDoc.importNode(n, true))
 			);
 		}
+		// Clips save the original article: inserted translation comparison
+		// nodes are runtime UI, not content (the removal happens on the
+		// clone, never on the live reader DOM)
+		readerDoc.querySelectorAll('.obsidian-reader-translation').forEach(n => n.remove());
 		return new Defuddle(readerDoc, { url: '' }).parse();
 	}
 	return new Defuddle(doc, { url: doc.URL }).parse();

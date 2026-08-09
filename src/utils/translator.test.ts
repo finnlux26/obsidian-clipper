@@ -4,7 +4,7 @@
 // structured translation that comes back. No internal mocking.
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import browser from './browser-polyfill';
-import { translateSelection, TranslationUnavailableError, clearTranslationCache } from './translator';
+import { translateSelection, translatePassage, TranslationUnavailableError, clearTranslationCache } from './translator';
 import { generalSettings } from './storage-utils';
 import { SelectionContext } from './translator-context';
 
@@ -13,6 +13,7 @@ const CTX: SelectionContext = {
 	kind: 'word',
 	sentence: 'The bank raised interest rates yesterday.',
 	paragraph: 'Money moves fast. The bank raised interest rates yesterday.',
+	neighbors: {},
 	article: { title: 'How Banks Work', site: 'example.com', lang: 'en' }
 };
 
@@ -120,6 +121,50 @@ describe('translateSelection (LLM engine)', () => {
 		await translateSelection(CTX, 'ja');
 
 		expect(sendMessage).toHaveBeenCalledTimes(2);
+	});
+
+	test('passage: sends delimited text with do-not-translate neighbors and parses the result', async () => {
+		const passageCtx: SelectionContext = {
+			selectedText: 'The bank raised rates. Markets fell sharply on the news.',
+			kind: 'passage',
+			sentence: 'The bank raised rates.',
+			paragraph: 'The bank raised rates. Markets fell sharply on the news.',
+			neighbors: {
+				before: 'Yesterday the central bank met.',
+				after: 'Analysts expect more volatility.'
+			},
+			article: CTX.article
+		};
+		proxyRepliesWith(JSON.stringify({ translation: '银行加息了。市场应声大跌。' }));
+
+		const result = await translatePassage(passageCtx, 'zh');
+
+		expect(result.translation).toBe('银行加息了。市场应声大跌。');
+		const message = sendMessage.mock.calls[0][0] as any;
+		const body = JSON.parse(message.options.body);
+		const userContent = body.messages.map((m: { content: string }) => m.content).join('\n');
+		// The passage travels inside explicit delimiters…
+		expect(userContent).toContain('<text>');
+		expect(userContent).toContain(passageCtx.selectedText);
+		// …and both neighbors are labeled as reference-only
+		expect(userContent).toContain('Yesterday the central bank met.');
+		expect(userContent).toContain('Analysts expect more volatility.');
+		expect(body.system).toMatch(/do NOT translate/i);
+	});
+
+	test('passage translations are cached like word translations', async () => {
+		const passageCtx: SelectionContext = {
+			...CTX,
+			selectedText: 'A long passage of text here.',
+			kind: 'passage',
+			neighbors: {}
+		};
+		proxyRepliesWith(JSON.stringify({ translation: '一段长文。' }));
+
+		await translatePassage(passageCtx, 'zh');
+		await translatePassage(passageCtx, 'zh');
+
+		expect(sendMessage).toHaveBeenCalledTimes(1);
 	});
 
 	test('throws TranslationUnavailableError when the interpreter is not configured', async () => {

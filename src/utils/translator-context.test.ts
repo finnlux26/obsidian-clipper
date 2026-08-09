@@ -125,6 +125,60 @@ describe('extractSelectionContext', () => {
 		expect(ctx.paragraph).toBe('Visit the bank today.');
 	});
 
+	test('captures neighboring paragraphs for passage context', () => {
+		document.body.innerHTML = `
+			<article>
+				<p>First paragraph sets the scene.</p>
+				<p>Second paragraph mentions the bank explicitly and at length.</p>
+				<p>Third paragraph wraps everything up.</p>
+			</article>`;
+		const sel = selectText(document.body, 'Second paragraph mentions the bank explicitly and at length.');
+
+		const ctx = extractSelectionContext(sel, ARTICLE)!;
+
+		expect(ctx.kind).toBe('passage');
+		expect(ctx.neighbors.before).toBe('First paragraph sets the scene.');
+		expect(ctx.neighbors.after).toBe('Third paragraph wraps everything up.');
+	});
+
+	test('first paragraph has no before-neighbor; neighbors are truncated', () => {
+		const long = 'word '.repeat(200).trim();
+		document.body.innerHTML = `
+			<article>
+				<p>Opening paragraph selected here.</p>
+				<p>${long}</p>
+			</article>`;
+		const sel = selectText(document.body, 'Opening paragraph selected here.');
+
+		const ctx = extractSelectionContext(sel, ARTICLE)!;
+
+		expect(ctx.neighbors.before).toBeUndefined();
+		expect(ctx.neighbors.after!.length).toBeLessThanOrEqual(500);
+	});
+
+	test('neighbor walk skips inserted translation nodes', () => {
+		document.body.innerHTML = `
+			<article>
+				<p>Original first paragraph.</p>
+				<div class="obsidian-reader-translation">已插入的译文。</div>
+				<p>Selected second paragraph body text.</p>
+			</article>`;
+		const sel = selectText(document.body, 'Selected second paragraph body text.');
+
+		const ctx = extractSelectionContext(sel, ARTICLE)!;
+
+		expect(ctx.neighbors.before).toBe('Original first paragraph.');
+	});
+
+	test('exposes the containing block element for comparison insertion', () => {
+		document.body.innerHTML = `<article><p id="target">Selected paragraph text.</p></article>`;
+		const sel = selectText(document.body, 'Selected paragraph text.');
+
+		const ctx = extractSelectionContext(sel, ARTICLE)!;
+
+		expect(ctx.blockElement).toBe(document.getElementById('target'));
+	});
+
 	test('collapsed selection returns null', () => {
 		document.body.innerHTML = `<p>Some text.</p>`;
 		const sel = window.getSelection()!;
