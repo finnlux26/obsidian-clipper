@@ -44,10 +44,12 @@ const APPEND_INSIDE_TAGS = new Set(['LI', 'TD', 'TH', 'DD', 'DT']);
 // Insert the translated paragraph as a comparison node. The original block
 // node is never modified — highlight anchors must survive. Idempotent per
 // source-paragraph hash.
-export function insertComparisonNode(doc: Document, ctx: SelectionContext, translation: string): HTMLElement | null {
+export function insertComparisonNode(doc: Document, ctx: SelectionContext, translation: string, targetLanguage: string): HTMLElement | null {
 	const block = ctx.blockElement;
 	if (!block || !doc.contains(block)) return null;
-	const hash = hashText(ctx.paragraph);
+	// Language-scoped hash: switching target languages inserts a separate
+	// comparison instead of silently reusing the old one
+	const hash = hashText(targetLanguage + '\u0000' + ctx.paragraph);
 
 	const appendInside = APPEND_INSIDE_TAGS.has(block.tagName);
 	const existing = appendInside
@@ -212,7 +214,8 @@ function renderPassageResult(
 	doc: Document,
 	popover: HTMLElement,
 	ctx: SelectionContext,
-	result: PassageTranslation
+	result: PassageTranslation,
+	targetLanguage: string
 ) {
 	const body = popover.querySelector('.obsidian-translate-body') as HTMLElement;
 	body.textContent = '';
@@ -228,7 +231,7 @@ function renderPassageResult(
 		insert.className = 'obsidian-translate-insert';
 		insert.textContent = getMessage('translationInsert');
 		insert.addEventListener('click', () => {
-			const node = insertComparisonNode(doc, ctx, result.translation);
+			const node = insertComparisonNode(doc, ctx, result.translation, targetLanguage);
 			if (node) {
 				insert.textContent = getMessage('translationInserted');
 				insert.disabled = true;
@@ -327,7 +330,7 @@ export function openTranslationPopover(
 		}
 		translatePassage(ctx, targetLanguage)
 			.then(result => {
-				if (doc.contains(popover)) renderPassageResult(doc, popover, ctx, result);
+				if (doc.contains(popover)) renderPassageResult(doc, popover, ctx, result, targetLanguage);
 			})
 			.catch(error => {
 				console.error('Translation failed:', error);

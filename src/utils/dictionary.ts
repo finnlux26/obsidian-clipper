@@ -37,7 +37,9 @@ function normalizationCandidates(word: string): string[] {
 	if (!base) return [];
 	const candidates = [base];
 	const push = (w: string) => {
-		if (w.length >= 2 && !candidates.includes(w)) candidates.push(w);
+		// Derived forms shorter than 3 chars produce embarrassing false hits
+		// ("pied" → "pi"), so they are not worth querying
+		if (w.length >= 3 && !candidates.includes(w)) candidates.push(w);
 	};
 
 	if (base.endsWith("'s") || base.endsWith('’s')) push(base.slice(0, -2));
@@ -138,11 +140,20 @@ export function lookupPhonetics(word: string): Promise<PhoneticsResult | null> {
 		for (const candidate of candidates) {
 			try {
 				const result = await fetchEntry(baseUrl, candidate);
-				if (result) return result;
+				if (result) {
+					// Alias the reduced form that actually hit, so "run"
+					// selected later reuses the "running" lookup
+					if (candidate !== cacheKey) {
+						phoneticsCache.set(candidate, Promise.resolve(result));
+					}
+					return result;
+				}
 			} catch (error) {
 				debugLog('Dictionary', 'Lookup failed for', candidate, error);
 			}
 		}
+		// A miss may be transient (network down); don't pin null forever
+		phoneticsCache.delete(cacheKey);
 		return null;
 	})();
 	phoneticsCache.set(cacheKey, pending);

@@ -337,6 +337,52 @@ describe('openTranslationPopover', () => {
 		expect(document.querySelectorAll('.obsidian-reader-translation')).toHaveLength(1);
 	});
 
+	test('list items get the comparison appended inside, original text intact', async () => {
+		document.body.innerHTML = `
+			<div class="obsidian-reader-content"><article>
+				<ol><li id="step">Visit the bank today to open your account.</li><li>Sign the papers.</li></ol>
+			</article></div>`;
+		proxyRepliesWith({ translation: '今天去银行开户。' });
+		const block = document.getElementById('step') as HTMLElement;
+		const originalText = block.textContent;
+		const ctx: SelectionContext = {
+			selectedText: block.textContent!.trim(),
+			kind: 'passage',
+			sentence: block.textContent!.trim(),
+			paragraph: block.textContent!.trim(),
+			neighbors: {},
+			article: CTX.article,
+			blockElement: block
+		};
+
+		const popover = openTranslationPopover(document, ctx, 'zh');
+		await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+		(popover.querySelector('button.obsidian-translate-insert') as HTMLButtonElement).click();
+
+		// Appended inside (a sibling li would break list numbering) —
+		// original text nodes remain untouched
+		const inserted = block.querySelector(':scope > .obsidian-reader-translation') as HTMLElement;
+		expect(inserted).not.toBeNull();
+		expect(inserted.textContent).toBe('今天去银行开户。');
+		expect(block.firstChild!.textContent).toBe(originalText);
+		expect(document.querySelectorAll('ol > li')).toHaveLength(2);
+	});
+
+	test('switching target language inserts a separate comparison node', async () => {
+		proxyRepliesWith({ translation: '译文' });
+		const ctx = passageCtxFromDom();
+
+		const popover1 = openTranslationPopover(document, ctx, 'zh');
+		await vi.waitFor(() => expect(popover1.getAttribute('data-state')).toBe('done'));
+		(popover1.querySelector('button.obsidian-translate-insert') as HTMLButtonElement).click();
+
+		const popover2 = openTranslationPopover(document, ctx, 'ja');
+		await vi.waitFor(() => expect(popover2.getAttribute('data-state')).toBe('done'));
+		(popover2.querySelector('button.obsidian-translate-insert') as HTMLButtonElement).click();
+
+		expect(document.querySelectorAll('.obsidian-reader-translation')).toHaveLength(2);
+	});
+
 	test('over-long passage selections get a split hint instead of a silent truncation', async () => {
 		proxyRepliesWith({ translation: 'x' });
 		const ctx = { ...passageCtxFromDom(), selectedText: 'y'.repeat(3200) };

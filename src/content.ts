@@ -201,44 +201,54 @@ declare global {
 			const flattenTimeout = new Promise<void>(resolve => setTimeout(resolve, 3000));
 			Promise.race([flattenShadowDom(document), flattenTimeout]).then(async () => {
 				let selectedHtml = '';
-				const selection = window.getSelection();
 
-				if (selection && selection.rangeCount > 0) {
-					const range = selection.getRangeAt(0);
-					const clonedSelection = range.cloneContents();
-					const div = document.createElement('div');
-					div.appendChild(clonedSelection);
-					selectedHtml = serializeChildren(div);
-				}
-
-				// Temporarily detach reader translation comparison nodes so the
-				// clip captures the original article only; restored right after
-				// parsing (brief visual gap is acceptable during a clip)
+				// Detach reader translation comparison nodes for the whole
+				// capture window (selection HTML, defuddle parse, fullHtml
+				// snapshot) so the clip only sees the original article;
+				// restored in the finally below
 				const translationNodes = Array.from(document.querySelectorAll('.obsidian-reader-translation'))
 					.map(node => ({ node, parent: node.parentNode!, next: node.nextSibling }));
 				translationNodes.forEach(({ node }) => node.remove());
 
-				// Use parseAsync to ensure async variables like {{transcript}} are available.
-				// If it hangs (e.g. another extension has corrupted fetch), fall back to sync parse.
-				const defuddle = new Defuddle(document, { url: document.URL });
-				const parseTimeout = new Promise<never>((_, reject) =>
-					setTimeout(() => reject(new Error('parseAsync timeout')), 8000)
-				);
 				let defuddled;
+				let doc: Document;
 				try {
+					const selection = window.getSelection();
+					if (selection && selection.rangeCount > 0) {
+						const range = selection.getRangeAt(0);
+						const clonedSelection = range.cloneContents();
+						const div = document.createElement('div');
+						div.appendChild(clonedSelection);
+						selectedHtml = serializeChildren(div);
+					}
+
+					// Use parseAsync to ensure async variables like {{transcript}} are available.
+					// If it hangs (e.g. another extension has corrupted fetch), fall back to sync parse.
+					const defuddle = new Defuddle(document, { url: document.URL });
+					const parseTimeout = new Promise<never>((_, reject) =>
+						setTimeout(() => reject(new Error('parseAsync timeout')), 8000)
+					);
 					defuddled = await Promise.race([defuddle.parseAsync(), parseTimeout])
 						.catch(() => defuddle.parse());
+
+					// Snapshot for fullHtml while translations are still detached
+					const parser = new DOMParser();
+					doc = parser.parseFromString(document.documentElement.outerHTML, 'text/html');
 				} finally {
-					translationNodes.forEach(({ node, parent, next }) => parent.insertBefore(node, next));
+					// Guarded per node: the saved anchor may have vanished during
+					// the async parse — fall back to appending so one failure
+					// cannot abort the rest of the restore
+					translationNodes.forEach(({ node, parent, next }) => {
+						try {
+							parent.insertBefore(node, next && next.parentNode === parent ? next : null);
+						} catch {
+							try { parent.appendChild(node); } catch { /* parent gone */ }
+						}
+					});
 				}
 				const extractedContent: { [key: string]: string } = {
 					...defuddled.variables,
 				};
-
-				// Create a new DOMParser
-				const parser = new DOMParser();
-				// Parse the document's HTML
-				const doc = parser.parseFromString(document.documentElement.outerHTML, 'text/html');
 
 				// Remove all script and style elements
 				doc.querySelectorAll('script, style').forEach(el => el.remove());

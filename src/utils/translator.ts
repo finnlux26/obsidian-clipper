@@ -241,9 +241,13 @@ class BrowserTranslationEngine implements TranslationEngine {
 	}
 
 	private languagesFor(request: TranslateWordRequest): { source: string; target: string } {
+		const target = primaryLanguage(request.targetLanguage);
+		if (!target) {
+			throw new TranslationUnavailableError('No target language configured.');
+		}
 		return {
 			source: primaryLanguage(request.ctx.article.lang) || 'en',
-			target: primaryLanguage(request.targetLanguage)
+			target
 		};
 	}
 

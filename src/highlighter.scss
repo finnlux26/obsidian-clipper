@@ -444,6 +444,36 @@ body.obsidian-highlighter-active {
 		font-size: 12px;
 	}
 
+	.obsidian-translate-passage {
+		color: #e6e6e6;
+	}
+
+	.obsidian-translate-insert {
+		margin-top: 8px;
+		padding: 3px 10px;
+		background: #3a3a3a;
+		color: #f0f0f0;
+		border: 1px solid #4a4a4a;
+		border-radius: 12px;
+		font-size: 12px;
+		cursor: pointer;
+
+		&:hover:not(:disabled) {
+			background: #4a4a4a;
+		}
+
+		&:disabled {
+			color: #8f8f8f;
+			cursor: default;
+		}
+	}
+
+	.obsidian-translate-degraded {
+		margin-top: 6px;
+		color: #8f8f8f;
+		font-size: 11px;
+	}
+
 	&[data-state="pending"] .obsidian-translate-body {
 		color: #a0a0a0;
 	}
@@ -451,6 +481,15 @@ body.obsidian-highlighter-active {
 	&[data-state="error"] .obsidian-translate-body {
 		color: #e8a1a1;
 	}
+}
+
+// Inserted comparison node in the reader article. Inherits the reader's
+// typography; subdued via opacity + a side rule so it works on every theme.
+.obsidian-reader-translation {
+	opacity: 0.82;
+	border-inline-start: 2px solid currentColor;
+	padding-inline-start: 0.75em;
+	margin-block: 0.5em 1.25em;
 }
 
 @keyframes clipperOpenAnimation {
