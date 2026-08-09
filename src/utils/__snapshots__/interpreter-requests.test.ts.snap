@@ -1,0 +1,264 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`LLM request construction (golden master) > anthropic: request url, headers and body 1`] = `
+{
+  "body": {
+    "max_tokens": 8000,
+    "messages": [
+      {
+        "content": "You are provided with the article "Example title" from example.com.",
+        "role": "user",
+      },
+      {
+        "content": "{"prompts":{"prompt_1":"Summarize the page","prompt_2":"Suggest three tags"}}",
+        "role": "user",
+      },
+    ],
+    "model": "claude-sonnet-5",
+    "system": "You are a helpful assistant. Please respond with one JSON object named \`prompts_responses\` — no explanatory text before or after. Use the keys provided, e.g. \`prompt_1\`, \`prompt_2\`, and fill in the values. Values should be Markdown strings unless otherwise specified. Make your responses concise. For example, your response should look like: {"prompts_responses":{"prompt_1":"tag1, tag2, tag3","prompt_2":"- bullet1
+- bullet 2
+- bullet3"}}",
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "anthropic-dangerous-direct-browser-access": "true",
+    "anthropic-version": "2023-06-01",
+    "x-api-key": "test-anthropic-key",
+  },
+  "url": "https://api.anthropic.com/v1/messages",
+}
+`;
+
+exports[`LLM request construction (golden master) > azure-openai: request url, headers and body 1`] = `
+{
+  "body": {
+    "max_completion_tokens": 8000,
+    "messages": [
+      {
+        "content": "You are a helpful assistant. Please respond with one JSON object named \`prompts_responses\` — no explanatory text before or after. Use the keys provided, e.g. \`prompt_1\`, \`prompt_2\`, and fill in the values. Values should be Markdown strings unless otherwise specified. Make your responses concise. For example, your response should look like: {"prompts_responses":{"prompt_1":"tag1, tag2, tag3","prompt_2":"- bullet1
+- bullet 2
+- bullet3"}}",
+        "role": "system",
+      },
+      {
+        "content": "You are provided with the article "Example title" from example.com.",
+        "role": "user",
+      },
+      {
+        "content": "{"prompts":{"prompt_1":"Summarize the page","prompt_2":"Suggest three tags"}}",
+        "role": "user",
+      },
+    ],
+    "stream": false,
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "api-key": "test-azure-key",
+  },
+  "url": "https://myresource.openai.azure.com/openai/deployments/my-deployment/chat/completions?api-version=2024-10-21",
+}
+`;
+
+exports[`LLM request construction (golden master) > deepseek: request url, headers and body 1`] = `
+{
+  "body": {
+    "max_tokens": 8000,
+    "messages": [
+      {
+        "content": "You are a helpful assistant. Please respond with one JSON object named \`prompts_responses\` — no explanatory text before or after. Use the keys provided, e.g. \`prompt_1\`, \`prompt_2\`, and fill in the values. Values should be Markdown strings unless otherwise specified. Make your responses concise. For example, your response should look like: {"prompts_responses":{"prompt_1":"tag1, tag2, tag3","prompt_2":"- bullet1
+- bullet 2
+- bullet3"}}",
+        "role": "system",
+      },
+      {
+        "content": "You are provided with the article "Example title" from example.com.",
+        "role": "user",
+      },
+      {
+        "content": "{"prompts":{"prompt_1":"Summarize the page","prompt_2":"Suggest three tags"}}",
+        "role": "user",
+      },
+    ],
+    "model": "deepseek-v4-pro",
+    "stream": false,
+    "thinking": {
+      "type": "disabled",
+    },
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Authorization": "Bearer test-deepseek-key",
+    "Content-Type": "application/json",
+  },
+  "url": "https://api.deepseek.com/chat/completions",
+}
+`;
+
+exports[`LLM request construction (golden master) > gemini: request url, headers and body 1`] = `
+{
+  "body": {
+    "contents": [
+      {
+        "parts": [
+          {
+            "text": "You are provided with the article "Example title" from example.com.",
+          },
+          {
+            "text": "{"prompts":{"prompt_1":"Summarize the page","prompt_2":"Suggest three tags"}}",
+          },
+        ],
+        "role": "user",
+      },
+    ],
+    "generationConfig": {
+      "maxOutputTokens": 8000,
+      "responseMimeType": "application/json",
+    },
+    "systemInstruction": {
+      "parts": [
+        {
+          "text": "You are a helpful assistant. Please respond with one JSON object named \`prompts_responses\` — no explanatory text before or after. Use the keys provided, e.g. \`prompt_1\`, \`prompt_2\`, and fill in the values. Values should be Markdown strings unless otherwise specified. Make your responses concise. For example, your response should look like: {"prompts_responses":{"prompt_1":"tag1, tag2, tag3","prompt_2":"- bullet1
+- bullet 2
+- bullet3"}}",
+        },
+      ],
+    },
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+    "X-goog-api-key": "test-gemini-key",
+  },
+  "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+}
+`;
+
+exports[`LLM request construction (golden master) > huggingface: request url, headers and body 1`] = `
+{
+  "body": {
+    "max_tokens": 1600,
+    "messages": [
+      {
+        "content": "You are a helpful assistant. Please respond with one JSON object named \`prompts_responses\` — no explanatory text before or after. Use the keys provided, e.g. \`prompt_1\`, \`prompt_2\`, and fill in the values. Values should be Markdown strings unless otherwise specified. Make your responses concise. For example, your response should look like: {"prompts_responses":{"prompt_1":"tag1, tag2, tag3","prompt_2":"- bullet1
+- bullet 2
+- bullet3"}}",
+        "role": "system",
+      },
+      {
+        "content": "You are provided with the article "Example title" from example.com.",
+        "role": "user",
+      },
+      {
+        "content": "{"prompts":{"prompt_1":"Summarize the page","prompt_2":"Suggest three tags"}}",
+        "role": "user",
+      },
+    ],
+    "model": "meta-llama/Llama-3.3-70B-Instruct",
+    "stream": false,
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Authorization": "Bearer test-hf-key",
+    "Content-Type": "application/json",
+  },
+  "url": "https://api-inference.huggingface.co/models/meta-llama/Llama-3.3-70B-Instruct/v1/chat/completions",
+}
+`;
+
+exports[`LLM request construction (golden master) > ollama: request url, headers and body 1`] = `
+{
+  "body": {
+    "format": "json",
+    "messages": [
+      {
+        "content": "You are a helpful assistant. Please respond with one JSON object named \`prompts_responses\` — no explanatory text before or after. Use the keys provided, e.g. \`prompt_1\`, \`prompt_2\`, and fill in the values. Values should be Markdown strings unless otherwise specified. Make your responses concise. For example, your response should look like: {"prompts_responses":{"prompt_1":"tag1, tag2, tag3","prompt_2":"- bullet1
+- bullet 2
+- bullet3"}}",
+        "role": "system",
+      },
+      {
+        "content": "You are provided with the article "Example title" from example.com.",
+        "role": "user",
+      },
+      {
+        "content": "{"prompts":{"prompt_1":"Summarize the page","prompt_2":"Suggest three tags"}}",
+        "role": "user",
+      },
+    ],
+    "model": "llama3.3",
+    "num_ctx": 120000,
+    "stream": false,
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Content-Type": "application/json",
+  },
+  "url": "http://127.0.0.1:11434/api/chat",
+}
+`;
+
+exports[`LLM request construction (golden master) > openai-default: request url, headers and body 1`] = `
+{
+  "body": {
+    "messages": [
+      {
+        "content": "You are a helpful assistant. Please respond with one JSON object named \`prompts_responses\` — no explanatory text before or after. Use the keys provided, e.g. \`prompt_1\`, \`prompt_2\`, and fill in the values. Values should be Markdown strings unless otherwise specified. Make your responses concise. For example, your response should look like: {"prompts_responses":{"prompt_1":"tag1, tag2, tag3","prompt_2":"- bullet1
+- bullet 2
+- bullet3"}}",
+        "role": "system",
+      },
+      {
+        "content": "You are provided with the article "Example title" from example.com.",
+        "role": "user",
+      },
+      {
+        "content": "{"prompts":{"prompt_1":"Summarize the page","prompt_2":"Suggest three tags"}}",
+        "role": "user",
+      },
+    ],
+    "model": "gpt-5.6-sol",
+    "stream": false,
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Authorization": "Bearer test-openai-key",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://obsidian.md/",
+    "X-Title": "Obsidian Web Clipper",
+  },
+  "url": "https://api.openai.com/v1/chat/completions",
+}
+`;
+
+exports[`LLM request construction (golden master) > perplexity: request url, headers and body 1`] = `
+{
+  "body": {
+    "max_tokens": 8000,
+    "messages": [
+      {
+        "content": "You are a helpful assistant. Please respond with one JSON object named \`prompts_responses\` — no explanatory text before or after. Use the keys provided, e.g. \`prompt_1\`, \`prompt_2\`, and fill in the values. Values should be Markdown strings unless otherwise specified. Make your responses concise. For example, your response should look like: {"prompts_responses":{"prompt_1":"tag1, tag2, tag3","prompt_2":"- bullet1
+- bullet 2
+- bullet3"}}",
+        "role": "system",
+      },
+      {
+        "content": "
+						"You are provided with the article "Example title" from example.com."
+						"{"prompts":{"prompt_1":"Summarize the page","prompt_2":"Suggest three tags"}}"",
+        "role": "user",
+      },
+    ],
+    "model": "sonar-pro",
+  },
+  "headers": {
+    "Accept": "application/json",
+    "Authorization": "Bearer test-perplexity-key",
+    "Content-Type": "application/json",
+    "HTTP-Referer": "https://obsidian.md/",
+    "X-Title": "Obsidian Web Clipper",
+  },
+  "url": "https://api.perplexity.ai/chat/completions",
+}
+`;
