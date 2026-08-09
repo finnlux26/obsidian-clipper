@@ -1,5 +1,5 @@
 {
-	"version": "2026.07.24",
+	"version": "2026.08.10",
 	"anthropic": {
 		"id": "anthropic",
 		"name": "Anthropic",
@@ -56,6 +56,12 @@
 		"apiKeyUrl": "https://huggingface.co/settings/tokens",
 		"modelsList": "https://huggingface.co/models",
 		"baseUrl": "https://api-inference.huggingface.co/models/{model-id}/chat/completions"
+	},
+	"local-proxy": {
+		"id": "local-proxy",
+		"name": "Local proxy (OpenAI-compatible)",
+		"apiKeyRequired": false,
+		"baseUrl": "http://127.0.0.1:1455/v1/chat/completions"
 	},
 	"meta": {
 		"id": "meta",

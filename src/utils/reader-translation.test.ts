@@ -199,6 +199,28 @@ describe('openTranslationPopover', () => {
 		expect(popover.textContent).toContain('Translation failed');
 	});
 
+	test('shows the start-your-proxy hint when the local model endpoint is down', async () => {
+		generalSettings.providers = [
+			{ id: 'provider-1', name: 'Local proxy (OpenAI-compatible)', baseUrl: 'http://127.0.0.1:1455/v1/chat/completions', apiKey: '', apiKeyRequired: false }
+		];
+		generalSettings.models = [
+			{ id: 'model-1', providerId: 'provider-1', providerModelId: 'gpt-5.6-sol', name: 'Codex', enabled: true }
+		];
+		// The background proxy reports a transport failure: nothing is
+		// listening on the local port
+		sendMessage.mockResolvedValue({ ok: false, status: 0, text: '', error: 'Failed to fetch' });
+
+		const popover = openTranslationPopover(document, CTX, 'zh');
+
+		await vi.waitFor(() => {
+			expect(popover.getAttribute('data-state')).toBe('error');
+		});
+		// Actionable copy, resolved from the en locale
+		expect(popover.textContent).toContain('Local model endpoint is not responding');
+		// Not the generic failure copy
+		expect(popover.textContent).not.toContain('Translation failed');
+	});
+
 	function proxyRoutesDictionaryAndLlm(options: { dictionaryHit: boolean; llmResult: unknown }) {
 		sendMessage.mockImplementation(async (message: any) => {
 			const url = String(message.url);

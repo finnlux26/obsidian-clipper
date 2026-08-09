@@ -27,6 +27,41 @@ export interface ChatMessageParts {
 // treat this differently from transport errors (the request was consumed).
 export class LLMTruncatedError extends Error {}
 
+// Thrown when a local (localhost/loopback) endpoint could not be reached at
+// the transport level — the local proxy or model server is not running.
+// Callers show "start your local proxy" guidance instead of a generic
+// failure (fork issue #8).
+export class LocalEndpointUnreachableError extends Error {
+	readonly origin: string;
+
+	constructor(origin: string) {
+		super(`Local endpoint ${origin} is not responding. Start your local proxy or model server and try again.`);
+		this.name = 'LocalEndpointUnreachableError';
+		this.origin = origin;
+	}
+}
+
+const LOCAL_HOSTNAMES = new Set(['localhost', '127.0.0.1', '[::1]', '0.0.0.0']);
+
+// Whether a URL targets a local endpoint (Ollama, a Codex-subscription
+// proxy, LM Studio, …). Only exact loopback hosts count — subdomains like
+// localhost.example.com do not.
+export function isLocalEndpoint(url: string): boolean {
+	try {
+		return LOCAL_HOSTNAMES.has(new URL(url).hostname.toLowerCase());
+	} catch {
+		return false;
+	}
+}
+
+function endpointOrigin(url: string): string {
+	try {
+		return new URL(url).origin;
+	} catch {
+		return url;
+	}
+}
+
 export function buildChatRequest(
 	provider: Provider,
 	model: ModelConfig,
@@ -168,7 +203,7 @@ export function buildChatRequest(
 			stream: false
 		};
 	} else {
-		// Default request format
+		// Default request format (OpenAI-compatible, including local proxies)
 		requestUrl = provider.baseUrl;
 		requestBody = {
 			model: model.providerModelId,
@@ -183,7 +218,9 @@ export function buildChatRequest(
 			...headers,
 			'HTTP-Referer': 'https://obsidian.md/',
 			'X-Title': 'Obsidian Web Clipper',
-			'Authorization': `Bearer ${provider.apiKey}`
+			// Keyless providers (local proxies) must not send a malformed
+			// "Bearer " header — strict servers reject it
+			...(provider.apiKey ? { 'Authorization': `Bearer ${provider.apiKey}` } : {})
 		};
 	}
 
@@ -208,6 +245,7 @@ interface FetchLike {
 // proxy is unavailable (CLI/tests) or reports a missing host permission
 // (Firefox), which preserves the pre-refactor direct-fetch behavior.
 async function proxiedFetch(spec: ChatRequestSpec): Promise<FetchLike> {
+	const local = isLocalEndpoint(spec.url);
 	let result: ProxyResult | undefined;
 	try {
 		result = await browser.runtime.sendMessage({
@@ -229,14 +267,27 @@ async function proxiedFetch(spec: ChatRequestSpec): Promise<FetchLike> {
 	// run outside a user gesture, and the direct attempt preserves the exact
 	// pre-refactor behavior on Firefox without a host grant
 	if (!result || typeof result.ok !== 'boolean' || result.error === 'CORS_PERMISSION_NEEDED') {
-		return fetch(spec.url, {
-			method: 'POST',
-			headers: spec.headers,
-			body: JSON.stringify(spec.body)
-		});
+		try {
+			return await fetch(spec.url, {
+				method: 'POST',
+				headers: spec.headers,
+				body: JSON.stringify(spec.body)
+			});
+		} catch (error) {
+			// A rejected fetch against a loopback host means nothing is
+			// listening — surface actionable guidance instead of a raw
+			// TypeError (fork issue #8)
+			if (local) {
+				throw new LocalEndpointUnreachableError(endpointOrigin(spec.url));
+			}
+			throw error;
+		}
 	}
 
-	if (result.error) {
+	if (result.error || (local && result.status === 0)) {
+		if (local) {
+			throw new LocalEndpointUnreachableError(endpointOrigin(spec.url));
+		}
 		throw new Error(result.error);
 	}
 
@@ -247,6 +298,49 @@ async function proxiedFetch(spec: ChatRequestSpec): Promise<FetchLike> {
 		statusText: '',
 		text: async () => text
 	};
+}
+
+export type EndpointHealth = 'alive' | 'unreachable' | 'timeout';
+
+// Probe a provider's endpoint origin with a plain GET through the background
+// fetchProxy. Any HTTP response — even a 404 from a server that only speaks
+// POST /v1/chat/completions — proves something is listening ('alive'). A
+// transport-level failure is 'unreachable'; no settlement within timeoutMs
+// is 'timeout'. Callers use this to pre-flight local proxies (fork issue #8).
+export async function checkEndpointHealth(provider: Provider, timeoutMs = 3000): Promise<EndpointHealth> {
+	let origin: string;
+	try {
+		origin = new URL(provider.baseUrl).origin;
+	} catch {
+		return 'unreachable';
+	}
+
+	const probe: Promise<EndpointHealth> = (async () => {
+		try {
+			const result = await browser.runtime.sendMessage({
+				action: 'fetchProxy',
+				url: origin,
+				options: { method: 'GET' }
+			}) as ProxyResult | undefined;
+			if (!result || typeof result.status !== 'number' || result.error || result.status === 0) {
+				return 'unreachable';
+			}
+			return 'alive';
+		} catch (error) {
+			debugLog('LLM', 'Endpoint health probe failed:', error);
+			return 'unreachable';
+		}
+	})();
+
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	const deadline = new Promise<EndpointHealth>(resolve => {
+		timer = setTimeout(() => resolve('timeout'), timeoutMs);
+	});
+	try {
+		return await Promise.race([probe, deadline]);
+	} finally {
+		if (timer !== undefined) clearTimeout(timer);
+	}
 }
 
 export async function sendChatRequest(

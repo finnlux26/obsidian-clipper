@@ -1076,6 +1076,9 @@
 	"translationLoading": {
 		"message": "Translating…"
 	},
+	"translationLocalEndpointDown": {
+		"message": "Local model endpoint is not responding. Start your local proxy and try again."
+	},
 	"translationNoEngine": {
 		"message": "Set up an Interpreter model in settings to enable translation."
 	},

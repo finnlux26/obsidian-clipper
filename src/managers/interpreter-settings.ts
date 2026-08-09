@@ -25,7 +25,10 @@ interface ProviderPresets {
 	[key: string]: PresetProvider | string;
 }
 
-const PROVIDERS_URL = 'https://raw.githubusercontent.com/obsidianmd/obsidian-clipper/refs/heads/main/providers.json';
+// Fork note (issue #8): presets come from this fork's providers.json so the
+// "Local proxy (OpenAI-compatible)" preset is actually served — upstream's
+// file does not carry it
+const PROVIDERS_URL = 'https://raw.githubusercontent.com/finnlux26/obsidian-clipper/refs/heads/main/providers.json';
 const PRESET_CACHE_DURATION = 5 * 60 * 1000; // 5 minutes
 const PRESET_RETRY_DELAY = 60 * 1000; // 1 minute
 const LOCAL_STORAGE_KEY = 'provider_presets';

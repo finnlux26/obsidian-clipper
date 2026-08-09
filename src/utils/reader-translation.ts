@@ -19,6 +19,7 @@ import {
 	translateSelection
 } from './translator';
 import { PhoneticsResult, isEnglishWord, lookupPhonetics } from './dictionary';
+import { LocalEndpointUnreachableError } from './llm-request';
 
 const POPOVER_CLASS = 'obsidian-translate-popover';
 const BUTTON_CLASS = 'obsidian-selection-translate';
@@ -267,9 +268,14 @@ function renderPassageResult(
 
 function renderError(popover: HTMLElement, error: unknown) {
 	const body = popover.querySelector('.obsidian-translate-body') as HTMLElement;
-	body.textContent = error instanceof TranslationUnavailableError
-		? getMessage('translationNoEngine')
-		: getMessage('translationFailed');
+	if (error instanceof TranslationUnavailableError) {
+		body.textContent = getMessage('translationNoEngine');
+	} else if (error instanceof LocalEndpointUnreachableError) {
+		// The local proxy / model server is not running (fork issue #8)
+		body.textContent = getMessage('translationLocalEndpointDown');
+	} else {
+		body.textContent = getMessage('translationFailed');
+	}
 	setState(popover, 'error');
 }
 
