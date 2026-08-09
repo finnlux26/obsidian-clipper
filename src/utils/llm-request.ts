@@ -30,10 +30,9 @@ export class LLMTruncatedError extends Error {}
 export function buildChatRequest(
 	provider: Provider,
 	model: ModelConfig,
-	systemContent: string,
-	context: string,
-	payload: string
+	parts: ChatMessageParts
 ): ChatRequestSpec {
+	const { system: systemContent, context, payload } = parts;
 	let requestUrl: string;
 	let requestBody: Record<string, unknown>;
 	let headers: Record<string, string> = {
@@ -220,10 +219,15 @@ async function proxiedFetch(spec: ChatRequestSpec): Promise<FetchLike> {
 				body: JSON.stringify(spec.body)
 			}
 		}) as ProxyResult | undefined;
-	} catch {
+	} catch (error) {
+		debugLog('LLM', 'fetchProxy unavailable, falling back to direct fetch:', error);
 		result = undefined;
 	}
 
+	// CORS_PERMISSION_NEEDED falls back to a direct page fetch rather than
+	// prompting via permissions.request() like reader-view does: this call may
+	// run outside a user gesture, and the direct attempt preserves the exact
+	// pre-refactor behavior on Firefox without a host grant
 	if (!result || typeof result.ok !== 'boolean' || result.error === 'CORS_PERMISSION_NEEDED') {
 		return fetch(spec.url, {
 			method: 'POST',
@@ -250,7 +254,7 @@ export async function sendChatRequest(
 	model: ModelConfig,
 	parts: ChatMessageParts
 ): Promise<string> {
-	const spec = buildChatRequest(provider, model, parts.system, parts.context, parts.payload);
+	const spec = buildChatRequest(provider, model, parts);
 
 	debugLog('LLM', `Sending request to ${provider.name} API:`, spec.body);
 

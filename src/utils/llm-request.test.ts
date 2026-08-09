@@ -37,7 +37,7 @@ function model(provider: Provider, providerModelId: string): ModelConfig {
 
 describe('buildChatRequest', () => {
 	test('anthropic shape: system field, x-api-key header, user messages in order', () => {
-		const spec = buildChatRequest(anthropic, model(anthropic, 'claude-sonnet-5'), SYSTEM, CONTEXT, PAYLOAD);
+		const spec = buildChatRequest(anthropic, model(anthropic, 'claude-sonnet-5'), { system: SYSTEM, context: CONTEXT, payload: PAYLOAD });
 		expect(spec.url).toBe('https://api.anthropic.com/v1/messages');
 		expect(spec.headers['x-api-key']).toBe('key-a');
 		expect(spec.headers['anthropic-version']).toBe('2023-06-01');
@@ -52,7 +52,7 @@ describe('buildChatRequest', () => {
 	});
 
 	test('openai-compatible default shape: system message first, bearer auth', () => {
-		const spec = buildChatRequest(openai, model(openai, 'gpt-5.6-sol'), SYSTEM, CONTEXT, PAYLOAD);
+		const spec = buildChatRequest(openai, model(openai, 'gpt-5.6-sol'), { system: SYSTEM, context: CONTEXT, payload: PAYLOAD });
 		expect(spec.headers['Authorization']).toBe('Bearer key-o');
 		expect(spec.body).toMatchObject({
 			model: 'gpt-5.6-sol',
@@ -66,7 +66,7 @@ describe('buildChatRequest', () => {
 	});
 
 	test('ollama shape: json format, no auth header', () => {
-		const spec = buildChatRequest(ollama, model(ollama, 'llama3.3'), SYSTEM, CONTEXT, PAYLOAD);
+		const spec = buildChatRequest(ollama, model(ollama, 'llama3.3'), { system: SYSTEM, context: CONTEXT, payload: PAYLOAD });
 		expect(spec.body).toMatchObject({ format: 'json', stream: false });
 		expect(spec.headers['Authorization']).toBeUndefined();
 	});

@@ -314,11 +314,15 @@ browser.runtime.onMessage.addListener((request: unknown) => {
 	if (options?.method) fetchOptions.method = options.method;
 	if (options?.headers) fetchOptions.headers = options.headers;
 	if (options?.body) fetchOptions.body = options.body;
+	const method = (options?.method || 'GET').toUpperCase();
 	return fetch(url, fetchOptions)
 		.then(async (resp) => {
 			const text = await resp.text();
-			// If YouTube returns bot-detection HTML, try native messaging (Safari)
-			if (!resp.ok && (text.includes('Sorry') || text.includes('<html')) && typeof browser.runtime.sendNativeMessage === 'function') {
+			// If YouTube returns bot-detection HTML, try native messaging (Safari).
+			// GET only: replaying is safe for idempotent reads, but proxied POSTs
+			// (e.g. paid LLM requests) must never be silently re-sent on the
+			// strength of an error body that happens to contain 'Sorry'/'<html'
+			if (!resp.ok && method === 'GET' && (text.includes('Sorry') || text.includes('<html')) && typeof browser.runtime.sendNativeMessage === 'function') {
 				return nativeFetch(url, options);
 			}
 			return { ok: resp.ok, status: resp.status, text, finalUrl: resp.url };
