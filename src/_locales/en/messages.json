@@ -1058,6 +1058,9 @@
 	"translateSelection": {
 		"message": "Translate"
 	},
+	"translationDegraded": {
+		"message": "Basic translation. Set up an Interpreter model in settings for context-aware results."
+	},
 	"translationFailed": {
 		"message": "Translation failed. Please try again."
 	},

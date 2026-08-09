@@ -181,6 +181,13 @@ function renderResult(doc: Document, popover: HTMLElement, result: WordTranslati
 		body.appendChild(meaning);
 	}
 
+	if (result.degraded) {
+		const hint = doc.createElement('div');
+		hint.className = 'obsidian-translate-degraded';
+		hint.textContent = getMessage('translationDegraded');
+		body.appendChild(hint);
+	}
+
 	const others = (result.otherCommonMeanings || []).filter(Boolean);
 	if (others.length > 0) {
 		const row = doc.createElement('div');

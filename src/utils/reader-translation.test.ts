@@ -350,6 +350,24 @@ describe('openTranslationPopover', () => {
 		expect(llmCalls).toHaveLength(0);
 	});
 
+	test('degraded browser-engine result shows the upgrade hint', async () => {
+		generalSettings.interpreterEnabled = false;
+		(globalThis as any).Translator = {
+			availability: async () => 'available',
+			create: async () => ({ translate: async (text: string) => `译:${text}` })
+		};
+		try {
+			const popover = openTranslationPopover(document, CTX, 'zh');
+
+			await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+			expect(popover.textContent).toContain(`译:${CTX.sentence}`);
+			// The upgrade hint pointing at the Interpreter settings
+			expect(popover.textContent).toContain('Basic translation');
+		} finally {
+			delete (globalThis as any).Translator;
+		}
+	});
+
 	test('Escape closes the popover', async () => {
 		proxyRepliesWith({ translation: '银行' });
 

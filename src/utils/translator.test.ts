@@ -2,7 +2,7 @@
 // Translation engine layer (fork issue #3), tested at the fetchProxy seam:
 // the observable behavior is the request that leaves the extension and the
 // structured translation that comes back. No internal mocking.
-import { describe, test, expect, beforeEach, vi } from 'vitest';
+import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import browser from './browser-polyfill';
 import { translateSelection, translatePassage, TranslationUnavailableError, clearTranslationCache } from './translator';
 import { generalSettings } from './storage-utils';
@@ -188,5 +188,87 @@ describe('translateSelection (LLM engine)', () => {
 		proxyRepliesWith(JSON.stringify(WORD_RESULT));
 		const retry = await translateSelection(CTX, 'zh');
 		expect(retry.translation).toBe('银行');
+	});
+});
+
+describe('engine dispatch (browser Translator API fallback)', () => {
+	const sendMessage = vi.spyOn(browser.runtime, 'sendMessage');
+	let translateSpy: ReturnType<typeof vi.fn>;
+	let availabilitySpy: ReturnType<typeof vi.fn>;
+
+	function stubBrowserTranslator(availability = 'available') {
+		translateSpy = vi.fn(async (text: string) => `译:${text}`);
+		availabilitySpy = vi.fn(async () => availability);
+		(globalThis as any).Translator = {
+			availability: availabilitySpy,
+			create: vi.fn(async () => ({ translate: translateSpy }))
+		};
+	}
+
+	beforeEach(() => {
+		sendMessage.mockReset();
+		clearTranslationCache();
+		configureLlm();
+	});
+
+	afterEach(() => {
+		delete (globalThis as any).Translator;
+	});
+
+	test('no LLM configured: word falls back to a degraded whole-sentence translation', async () => {
+		generalSettings.interpreterEnabled = false;
+		stubBrowserTranslator();
+
+		const result = await translateSelection(CTX, 'zh');
+
+		expect(result.degraded).toBe(true);
+		expect(result.translation).toBe(`译:${CTX.sentence}`);
+		expect(sendMessage).not.toHaveBeenCalled();
+	});
+
+	test('LLM configured: the LLM wins even when the browser engine exists', async () => {
+		stubBrowserTranslator();
+		sendMessage.mockResolvedValue({
+			ok: true,
+			status: 200,
+			text: JSON.stringify({
+				content: [{ type: 'text', text: JSON.stringify(WORD_RESULT) }],
+				stop_reason: 'end_turn'
+			})
+		});
+
+		const result = await translateSelection(CTX, 'zh');
+
+		expect(result.translation).toBe('银行');
+		expect(result.degraded).toBeUndefined();
+		expect(translateSpy).not.toHaveBeenCalled();
+	});
+
+	test('no LLM configured: passages translate directly through the browser engine', async () => {
+		generalSettings.interpreterEnabled = false;
+		stubBrowserTranslator();
+		const passageCtx: SelectionContext = {
+			...CTX,
+			selectedText: 'The bank raised rates. Markets fell.',
+			kind: 'passage'
+		};
+
+		const result = await translatePassage(passageCtx, 'zh');
+
+		expect(result.translation).toBe('译:The bank raised rates. Markets fell.');
+		expect(sendMessage).not.toHaveBeenCalled();
+	});
+
+	test('language pair unavailable in the browser engine rejects with a clear error', async () => {
+		generalSettings.interpreterEnabled = false;
+		stubBrowserTranslator('unavailable');
+
+		await expect(translateSelection(CTX, 'zh')).rejects.toThrow(/not available/i);
+	});
+
+	test('neither engine present still raises TranslationUnavailableError', async () => {
+		generalSettings.interpreterEnabled = false;
+
+		await expect(translateSelection(CTX, 'zh')).rejects.toBeInstanceOf(TranslationUnavailableError);
 	});
 });

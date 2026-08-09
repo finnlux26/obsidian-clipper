@@ -16,6 +16,9 @@ export interface WordTranslation {
 	otherCommonMeanings?: string[];
 	// LLM-provided IPA, used only when the dictionary source misses (issue #5)
 	ipa?: string;
+	// Set by the browser engine: a plain whole-sentence translation without
+	// word-sense analysis — the UI shows an upgrade hint (issue #7)
+	degraded?: boolean;
 }
 
 export interface TranslateWordRequest {
@@ -182,10 +185,95 @@ class LlmTranslationEngine implements TranslationEngine {
 	}
 }
 
-const llmEngine = new LlmTranslationEngine();
+// Chrome 138+ built-in Translator API — the typings aren't in the project's
+// lib target, so the global gets a minimal local shape
+interface BrowserTranslatorInstance {
+	translate(text: string): Promise<string>;
+}
+interface BrowserTranslatorGlobal {
+	availability(options: { sourceLanguage: string; targetLanguage: string }): Promise<string>;
+	create(options: { sourceLanguage: string; targetLanguage: string }): Promise<BrowserTranslatorInstance>;
+}
 
-export function getTranslationEngine(): TranslationEngine {
-	return llmEngine;
+function getBrowserTranslatorGlobal(): BrowserTranslatorGlobal | undefined {
+	return (globalThis as { Translator?: BrowserTranslatorGlobal }).Translator;
+}
+
+function primaryLanguage(tag: string): string {
+	return (tag || '').split('-')[0].toLowerCase();
+}
+
+// Direct translation without word-sense analysis: words get their whole
+// sentence translated (degraded mode with an upgrade hint), passages get a
+// plain translation. Local, free, no context awareness.
+class BrowserTranslationEngine implements TranslationEngine {
+	id = 'browser' as const;
+	private instances = new Map<string, Promise<BrowserTranslatorInstance>>();
+
+	clearInstances(): void {
+		this.instances.clear();
+	}
+
+	async available(): Promise<boolean> {
+		return !!getBrowserTranslatorGlobal();
+	}
+
+	private instance(sourceLanguage: string, targetLanguage: string): Promise<BrowserTranslatorInstance> {
+		const key = `${sourceLanguage}>${targetLanguage}`;
+		let pending = this.instances.get(key);
+		if (!pending) {
+			pending = (async () => {
+				const api = getBrowserTranslatorGlobal();
+				if (!api) {
+					throw new TranslationUnavailableError('No translation engine is configured.');
+				}
+				const availability = await api.availability({ sourceLanguage, targetLanguage });
+				if (availability === 'unavailable') {
+					throw new Error(`Translation from ${sourceLanguage} to ${targetLanguage} is not available in this browser.`);
+				}
+				// 'downloadable'/'downloading': create() triggers/awaits the model download
+				return api.create({ sourceLanguage, targetLanguage });
+			})();
+			this.instances.set(key, pending);
+			pending.catch(() => this.instances.delete(key));
+		}
+		return pending;
+	}
+
+	private languagesFor(request: TranslateWordRequest): { source: string; target: string } {
+		return {
+			source: primaryLanguage(request.ctx.article.lang) || 'en',
+			target: primaryLanguage(request.targetLanguage)
+		};
+	}
+
+	async translateWord(request: TranslateWordRequest): Promise<WordTranslation> {
+		const { source, target } = this.languagesFor(request);
+		const sentence = request.ctx.sentence;
+		if (source === target) return { translation: sentence, degraded: true };
+		const translator = await this.instance(source, target);
+		return { translation: await translator.translate(sentence), degraded: true };
+	}
+
+	async translatePassage(request: TranslateWordRequest): Promise<PassageTranslation> {
+		const { source, target } = this.languagesFor(request);
+		const text = request.ctx.selectedText;
+		if (source === target) return { translation: text };
+		const translator = await this.instance(source, target);
+		return { translation: await translator.translate(text) };
+	}
+}
+
+const llmEngine = new LlmTranslationEngine();
+const browserEngine = new BrowserTranslationEngine();
+
+// Dispatch: context-aware LLM first; browser Translator API as the direct-
+// translation fallback; null when neither exists (UI shows the configure
+// hint). Synchronous so cache keys can include the engine id.
+export function getTranslationEngine(): TranslationEngine | null {
+	if (resolveLlmTarget()) return llmEngine;
+	if (getBrowserTranslatorGlobal()) return browserEngine;
+	return null;
 }
 
 // Caching the promise (not the value) also deduplicates in-flight requests:
@@ -197,10 +285,14 @@ const translationCache = new Map<string, Promise<WordTranslation>>();
 export function clearTranslationCache(): void {
 	translationCache.clear();
 	passageCache.clear();
+	browserEngine.clearInstances();
 }
 
 export function translateSelection(ctx: SelectionContext, targetLanguage: string): Promise<WordTranslation> {
 	const engine = getTranslationEngine();
+	if (!engine) {
+		return Promise.reject(new TranslationUnavailableError('No translation engine is configured.'));
+	}
 
 	const cacheKey = [engine.id, targetLanguage, ctx.sentence, ctx.selectedText].join('\u0000');
 	const cached = translationCache.get(cacheKey);
@@ -224,6 +316,9 @@ const passageCache = new Map<string, Promise<PassageTranslation>>();
 
 export function translatePassage(ctx: SelectionContext, targetLanguage: string): Promise<PassageTranslation> {
 	const engine = getTranslationEngine();
+	if (!engine) {
+		return Promise.reject(new TranslationUnavailableError('No translation engine is configured.'));
+	}
 
 	const cacheKey = [engine.id, targetLanguage, 'passage', ctx.selectedText].join('\u0000');
 	const cached = passageCache.get(cacheKey);
