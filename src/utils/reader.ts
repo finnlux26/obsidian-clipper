@@ -39,6 +39,7 @@ import { ReaderSettings } from '../types/types';
 import { wireTranscript } from './reader-transcript';
 import { registerSelectionTranslation, getTargetLanguage, articleMetaFromDocument } from './reader-translation';
 import {
+	FULL_TRANSLATION_NAV_BUTTON_CLASS,
 	createFullTranslationNavButton,
 	enableFullTranslation,
 	wasFullTranslationEnabled
@@ -2261,21 +2262,6 @@ export class Reader {
 			// the highlight button so it can position itself relative to it.
 			registerSelectionTranslation(doc, () => Reader.isActive);
 
-			// Restore full-article translation if it was on for this URL
-			const currentUrl = doc.location?.href || '';
-			if (currentUrl) {
-				wasFullTranslationEnabled(currentUrl).then(enabled => {
-					if (enabled && Reader.isActive) {
-						enableFullTranslation(doc, {
-							targetLanguage: getTargetLanguage(),
-							article: articleMetaFromDocument(doc),
-							url: currentUrl
-						});
-						doc.querySelector('.nav-btn-translate')?.classList.add('is-active');
-					}
-				}).catch(() => {});
-			}
-
 			// Set up color scheme media query listener
 			this.colorSchemeMediaQuery = window.matchMedia('(prefers-color-scheme: dark)');
 			this.colorSchemeMediaQuery.addEventListener('change', (e) => this.handleColorSchemeChange(e, doc));
@@ -2303,6 +2289,22 @@ export class Reader {
 			}
 
 			this.populateArticle(doc, main, article, { content, title, author, published, domain, wordCount, parseTime });
+
+			// Restore full-article translation if it was on for this URL —
+			// must run after the article is populated so blocks exist
+			const fullTranslationUrl = doc.location?.href || '';
+			if (fullTranslationUrl) {
+				wasFullTranslationEnabled(fullTranslationUrl).then(enabled => {
+					if (enabled && Reader.isActive) {
+						enableFullTranslation(doc, {
+							targetLanguage: getTargetLanguage(),
+							article: articleMetaFromDocument(doc),
+							url: fullTranslationUrl
+						});
+						doc.querySelector(`.${FULL_TRANSLATION_NAV_BUTTON_CLASS}`)?.classList.add('is-active');
+					}
+				}).catch(() => {});
+			}
 
 			// Use the Defuddle-extracted title (article title only) instead of
 			// document.title (which often includes the site name suffix).

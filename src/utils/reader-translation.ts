@@ -41,6 +41,42 @@ export function hashText(text: string): string {
 // layout) get the comparison appended inside instead of beside them
 const APPEND_INSIDE_TAGS = new Set(['LI', 'TD', 'TH', 'DD', 'DT']);
 
+// Shared with the full-article mode: create (or find) the translation node
+// for a block, without ever modifying the block's own content. origin tags
+// who inserted it ('manual' passage comparisons vs 'full' article mode).
+export function ensureTranslationNode(
+	doc: Document,
+	block: HTMLElement,
+	hash: string,
+	origin: 'manual' | 'full'
+): HTMLElement {
+	const appendInside = APPEND_INSIDE_TAGS.has(block.tagName);
+	// Origin-scoped matching: a manual comparison and the full-article mode
+	// may hash the same paragraph identically — they must never adopt each
+	// other's nodes (full-mode cache would overwrite a manual translation;
+	// toggling full off would delete a manual comparison)
+	const originSelector = origin === 'full' ? '[data-origin="full"]' : ':not([data-origin="full"])';
+	const matchSelector = `.${TRANSLATION_NODE_CLASS}${originSelector}[data-src-hash="${hash}"]`;
+	const existing = appendInside
+		? block.querySelector(`:scope > ${matchSelector}`)
+		: block.nextElementSibling?.matches(matchSelector)
+			? block.nextElementSibling
+			: null;
+	if (existing) return existing as HTMLElement;
+
+	const node = doc.createElement(appendInside ? 'div' : (block.tagName === 'P' ? 'p' : 'div'));
+	node.className = TRANSLATION_NODE_CLASS;
+	if (origin === 'full') node.setAttribute('data-origin', 'full');
+	node.setAttribute('data-src-hash', hash);
+	node.setAttribute('data-state', 'pending');
+	if (appendInside) {
+		block.appendChild(node);
+	} else {
+		block.after(node);
+	}
+	return node;
+}
+
 // Insert the translated paragraph as a comparison node. The original block
 // node is never modified — highlight anchors must survive. Idempotent per
 // source-paragraph hash.
@@ -51,23 +87,9 @@ export function insertComparisonNode(doc: Document, ctx: SelectionContext, trans
 	// comparison instead of silently reusing the old one
 	const hash = hashText(targetLanguage + '\u0000' + ctx.paragraph);
 
-	const appendInside = APPEND_INSIDE_TAGS.has(block.tagName);
-	const existing = appendInside
-		? block.querySelector(`:scope > .${TRANSLATION_NODE_CLASS}[data-src-hash="${hash}"]`)
-		: block.nextElementSibling?.matches(`.${TRANSLATION_NODE_CLASS}[data-src-hash="${hash}"]`)
-			? block.nextElementSibling
-			: null;
-	if (existing) return existing as HTMLElement;
-
-	const node = doc.createElement(appendInside ? 'div' : (block.tagName === 'P' ? 'p' : 'div'));
-	node.className = TRANSLATION_NODE_CLASS;
-	node.setAttribute('data-src-hash', hash);
+	const node = ensureTranslationNode(doc, block, hash, 'manual');
 	node.textContent = translation;
-	if (appendInside) {
-		block.appendChild(node);
-	} else {
-		block.after(node);
-	}
+	node.setAttribute('data-state', 'done');
 	return node;
 }
 

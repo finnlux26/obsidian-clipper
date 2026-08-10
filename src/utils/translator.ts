@@ -6,7 +6,7 @@
 import { generalSettings } from './storage-utils';
 import { ModelConfig, Provider } from '../types/types';
 import { sendChatRequest } from './llm-request';
-import { SelectionContext } from './translator-context';
+import { ArticleMeta, SelectionContext } from './translator-context';
 import { debugLog } from './debug';
 
 export interface WordTranslation {
@@ -99,18 +99,23 @@ function stripCodeFences(text: string): string {
 		.trim();
 }
 
-function parseWordTranslation(content: string): WordTranslation {
+// Shared lenient JSON extraction for model replies: strip fences, parse,
+// fall back to the first {...} span
+function parseModelJson(content: string): any {
 	const unfenced = stripCodeFences(content);
-	let parsed: any;
 	try {
-		parsed = JSON.parse(unfenced);
+		return JSON.parse(unfenced);
 	} catch {
 		const match = unfenced.match(/\{[\s\S]*\}/);
 		if (!match) {
 			throw new Error('The model returned a response that could not be parsed.');
 		}
-		parsed = JSON.parse(match[0]);
+		return JSON.parse(match[0]);
 	}
+}
+
+function parseWordTranslation(content: string): WordTranslation {
+	const parsed = parseModelJson(content);
 	if (!parsed || typeof parsed.translation !== 'string' || !parsed.translation) {
 		throw new Error('The model response did not contain a translation.');
 	}
@@ -126,17 +131,7 @@ function parseWordTranslation(content: string): WordTranslation {
 }
 
 function parsePassageTranslation(content: string): PassageTranslation {
-	const unfenced = stripCodeFences(content);
-	let parsed: any;
-	try {
-		parsed = JSON.parse(unfenced);
-	} catch {
-		const match = unfenced.match(/\{[\s\S]*\}/);
-		if (!match) {
-			throw new Error('The model returned a response that could not be parsed.');
-		}
-		parsed = JSON.parse(match[0]);
-	}
+	const parsed = parseModelJson(content);
 	if (!parsed || typeof parsed.translation !== 'string' || !parsed.translation) {
 		throw new Error('The model response did not contain a translation.');
 	}
@@ -304,7 +299,7 @@ class BrowserTranslationEngine implements TranslationEngine {
 export async function translateBatchLlm(
 	paragraphs: string[],
 	targetLanguage: string,
-	article: import('./translator-context').ArticleMeta,
+	article: ArticleMeta,
 	glossary: GlossaryEntry[]
 ): Promise<BatchTranslationResult> {
 	const target = resolveLlmTarget();
@@ -331,17 +326,7 @@ export async function translateBatchLlm(
 		payload
 	});
 
-	const unfenced = stripCodeFences(content);
-	let parsed: any;
-	try {
-		parsed = JSON.parse(unfenced);
-	} catch {
-		const match = unfenced.match(/\{[\s\S]*\}/);
-		if (!match) {
-			throw new Error('The model returned a response that could not be parsed.');
-		}
-		parsed = JSON.parse(match[0]);
-	}
+	const parsed = parseModelJson(content);
 	const rawTranslations = parsed?.translations;
 	if (!rawTranslations || typeof rawTranslations !== 'object') {
 		throw new Error('The model response did not contain translations.');
@@ -364,6 +349,10 @@ export function browserTranslateText(text: string, articleLang: string, targetLa
 
 export function hasBrowserTranslator(): boolean {
 	return !!getBrowserTranslatorGlobal();
+}
+
+export function hasLlmEngine(): boolean {
+	return resolveLlmTarget() !== null;
 }
 
 // Full-article engine preference is reversed from selection dispatch: the

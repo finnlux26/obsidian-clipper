@@ -207,6 +207,70 @@ describe('full-article translation', () => {
 		expect(document.querySelector('article')!.innerHTML).toBe(snapshot);
 	});
 
+	test('manual comparison and full mode never adopt each other\'s nodes', async () => {
+		stubBrowserTranslator();
+		// A manual comparison on p1 whose hash matches what full mode computes
+		// is still a distinct node (origin-scoped matching)
+		enableFullTranslation(document, OPTS);
+		io().trigger([document.getElementById('p1')!]);
+		await settle();
+		const fullNode = document.getElementById('p1')!.nextElementSibling as HTMLElement;
+		expect(fullNode.getAttribute('data-origin')).toBe('full');
+		const fullHash = fullNode.getAttribute('data-src-hash')!;
+
+		// Manual insert with the same hash (as the passage feature would)
+		const manual = document.createElement('p');
+		manual.className = 'obsidian-reader-translation';
+		manual.setAttribute('data-src-hash', fullHash);
+		manual.textContent = '手动的语境级译文。';
+		fullNode.after(manual);
+
+		disableFullTranslation(document);
+
+		// The full node is gone, the manual one survives untouched
+		expect(document.querySelectorAll('.obsidian-reader-translation')).toHaveLength(1);
+		expect(document.querySelector('.obsidian-reader-translation')!.textContent).toBe('手动的语境级译文。');
+	});
+
+	test('browser pair unavailable falls back to the configured LLM', async () => {
+		(globalThis as any).Translator = {
+			availability: vi.fn(async () => 'unavailable'),
+			create: vi.fn()
+		};
+		sendMessage.mockResolvedValue({
+			ok: true, status: 200,
+			text: JSON.stringify({
+				content: [{ type: 'text', text: JSON.stringify({ translations: { '1': '第一段。' } }) }],
+				stop_reason: 'end_turn'
+			})
+		});
+		enableFullTranslation(document, OPTS);
+
+		io().trigger([document.getElementById('p1')!]);
+		await settle(10);
+
+		const node = document.getElementById('p1')!.nextElementSibling!;
+		expect(node.getAttribute('data-state')).toBe('done');
+		expect(node.textContent).toBe('第一段。');
+		expect(sendMessage).toHaveBeenCalled();
+	});
+
+	test('ten enable/disable cycles leave no nodes and no live observers', async () => {
+		stubBrowserTranslator();
+		const snapshot = document.querySelector('article')!.innerHTML;
+
+		for (let i = 0; i < 10; i++) {
+			enableFullTranslation(document, OPTS);
+			io().trigger([document.getElementById('p1')!]);
+			await settle();
+			disableFullTranslation(document);
+		}
+
+		expect(document.querySelector('article')!.innerHTML).toBe(snapshot);
+		expect(FakeIntersectionObserver.instances).toHaveLength(10);
+		expect(FakeIntersectionObserver.instances.every(i => i.observed.length === 0)).toBe(true);
+	});
+
 	test('per-URL memory round-trips through storage', async () => {
 		const store: Record<string, any> = {};
 		vi.spyOn(browser.storage.local, 'get').mockImplementation(async (key: any) => ({ [key]: store[key] }));
