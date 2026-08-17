@@ -15,7 +15,7 @@ import {
 	PassageTranslation,
 	TranslationUnavailableError,
 	WordTranslation,
-	translatePassage,
+	translatePassageStream,
 	translateSelection
 } from './translator';
 import { PhoneticsResult, isEnglishWord, lookupPhonetics } from './dictionary';
@@ -394,7 +394,19 @@ export function openTranslationPopover(
 			renderTooLong(popover);
 			return popover;
 		}
-		translatePassage(ctx, targetLanguage)
+		// Stream the translation into the body as it arrives; the final
+		// render replaces it with the full result (insert button, badge)
+		let streamText: HTMLElement | null = null;
+		translatePassageStream(ctx, targetLanguage, delta => {
+			if (!doc.contains(popover)) return;
+			if (!streamText) {
+				body.textContent = '';
+				streamText = doc.createElement('div');
+				streamText.className = 'obsidian-translate-passage';
+				body.appendChild(streamText);
+			}
+			streamText.textContent += delta;
+		})
 			.then(result => {
 				if (doc.contains(popover)) renderPassageResult(doc, popover, ctx, result, targetLanguage);
 			})

@@ -5,7 +5,7 @@
 // without touching callers.
 import { generalSettings } from './storage-utils';
 import { ModelConfig, Provider } from '../types/types';
-import { sendChatRequest } from './llm-request';
+import { sendChatRequest, sendChatRequestStream, supportsStreaming } from './llm-request';
 import { ArticleMeta, SelectionContext } from './translator-context';
 import { debugLog } from './debug';
 
@@ -90,6 +90,15 @@ const BATCH_SYSTEM_PROMPT =
 	'Respond with a single JSON object only — no markdown fences, no commentary: ' +
 	'{"translations": {"1": "...", "2": "..."}, "keyTerms": [{"source": "...", "target": "..."}]}. ' +
 	'keyTerms lists up to 8 recurring domain terms from this batch with the translation you used (empty array if none).';
+
+// Streaming variant: plain text out — a JSON envelope can't be rendered
+// incrementally as it arrives (fork issue #10)
+const STREAM_PASSAGE_SYSTEM_PROMPT =
+	'You are a precise translator embedded in a reading tool. ' +
+	'Translate ONLY the content between <text> and </text> into the target language. ' +
+	'The neighboring paragraphs are reference context for pronouns and terminology — do NOT translate them and do NOT include them in your output. ' +
+	'Keep terminology consistent with the context. ' +
+	'Respond with the translated text only — no JSON, no markdown fences, no commentary.';
 
 const PASSAGE_SYSTEM_PROMPT =
 	'You are a precise translator embedded in a reading tool. ' +
@@ -181,20 +190,7 @@ class LlmTranslationEngine implements TranslationEngine {
 		if (!target) {
 			throw new TranslationUnavailableError('No translation engine is configured.');
 		}
-		const { ctx, targetLanguage } = request;
-
-		// Passage context budget: ±1 neighboring paragraph, already truncated
-		// at extraction time (see spec issue #1)
-		const lines = [`Article: "${ctx.article.title}" (${ctx.article.site}, ${ctx.article.lang || 'unknown language'})`];
-		if (ctx.neighbors.before) {
-			lines.push(`Previous paragraph (reference only, do not translate): "${ctx.neighbors.before}"`);
-		}
-		if (ctx.neighbors.after) {
-			lines.push(`Next paragraph (reference only, do not translate): "${ctx.neighbors.after}"`);
-		}
-		lines.push(`Target language: ${targetLanguage}`);
-		const context = lines.join('\n');
-		const payload = `<text>\n${ctx.selectedText}\n</text>`;
+		const { context, payload } = buildPassageParts(request);
 
 		const content = await sendChatRequest(target.provider, target.model, {
 			system: PASSAGE_SYSTEM_PROMPT,
@@ -203,6 +199,24 @@ class LlmTranslationEngine implements TranslationEngine {
 		});
 		return { ...parsePassageTranslation(content), engine: 'llm' as const, engineLabel: target.model.name };
 	}
+}
+
+// Passage context budget: ±1 neighboring paragraph, already truncated at
+// extraction time (see spec issue #1)
+function buildPassageParts(request: TranslateWordRequest): { context: string; payload: string } {
+	const { ctx, targetLanguage } = request;
+	const lines = [`Article: "${ctx.article.title}" (${ctx.article.site}, ${ctx.article.lang || 'unknown language'})`];
+	if (ctx.neighbors.before) {
+		lines.push(`Previous paragraph (reference only, do not translate): "${ctx.neighbors.before}"`);
+	}
+	if (ctx.neighbors.after) {
+		lines.push(`Next paragraph (reference only, do not translate): "${ctx.neighbors.after}"`);
+	}
+	lines.push(`Target language: ${targetLanguage}`);
+	return {
+		context: lines.join('\n'),
+		payload: `<text>\n${ctx.selectedText}\n</text>`
+	};
 }
 
 // Chrome 138+ built-in Translator API — the typings aren't in the project's
@@ -419,13 +433,17 @@ export function translateSelection(ctx: SelectionContext, targetLanguage: string
 
 const passageCache = new Map<string, Promise<PassageTranslation>>();
 
+function passageCacheKey(engineId: string, targetLanguage: string, ctx: SelectionContext): string {
+	return [engineId, targetLanguage, 'passage', ctx.selectedText].join('\u0000');
+}
+
 export function translatePassage(ctx: SelectionContext, targetLanguage: string): Promise<PassageTranslation> {
 	const engine = getTranslationEngine();
 	if (!engine) {
 		return Promise.reject(new TranslationUnavailableError('No translation engine is configured.'));
 	}
 
-	const cacheKey = [engine.id, targetLanguage, 'passage', ctx.selectedText].join('\u0000');
+	const cacheKey = passageCacheKey(engine.id, targetLanguage, ctx);
 	const cached = passageCache.get(cacheKey);
 	if (cached) {
 		debugLog('Translator', 'Passage cache hit');
@@ -437,6 +455,57 @@ export function translatePassage(ctx: SelectionContext, targetLanguage: string):
 			throw new TranslationUnavailableError('No translation engine is configured.');
 		}
 		return engine.translatePassage({ ctx, targetLanguage });
+	})();
+	passageCache.set(cacheKey, pending);
+	pending.catch(() => passageCache.delete(cacheKey));
+	return pending;
+}
+
+// Streaming passage translation (fork issue #10): OpenAI-compatible LLM
+// providers stream token deltas via onDelta; every other configuration —
+// provider shapes that don't stream, the browser engine, cache hits —
+// delivers the full text as a single delta. Shares the passage cache with
+// the non-streaming path.
+export function translatePassageStream(
+	ctx: SelectionContext,
+	targetLanguage: string,
+	onDelta: (delta: string) => void
+): Promise<PassageTranslation> {
+	const engine = getTranslationEngine();
+	if (!engine) {
+		return Promise.reject(new TranslationUnavailableError('No translation engine is configured.'));
+	}
+
+	const cacheKey = passageCacheKey(engine.id, targetLanguage, ctx);
+	const cached = passageCache.get(cacheKey);
+	if (cached) {
+		debugLog('Translator', 'Passage cache hit (stream)');
+		return cached.then(result => {
+			onDelta(result.translation);
+			return result;
+		});
+	}
+
+	const target = engine.id === 'llm' ? resolveLlmTarget() : null;
+	if (!target || !supportsStreaming(target.provider)) {
+		return translatePassage(ctx, targetLanguage).then(result => {
+			onDelta(result.translation);
+			return result;
+		});
+	}
+
+	const pending = (async () => {
+		const { context, payload } = buildPassageParts({ ctx, targetLanguage });
+		const full = await sendChatRequestStream(target.provider, target.model, {
+			system: STREAM_PASSAGE_SYSTEM_PROMPT,
+			context,
+			payload
+		}, onDelta);
+		const translation = full.trim();
+		if (!translation) {
+			throw new Error('The model returned an empty translation.');
+		}
+		return { translation, engine: 'llm' as const, engineLabel: target.model.name };
 	})();
 	passageCache.set(cacheKey, pending);
 	pending.catch(() => passageCache.delete(cacheKey));

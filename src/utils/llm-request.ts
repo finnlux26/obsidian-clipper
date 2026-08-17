@@ -442,3 +442,152 @@ function extractResponseContent(provider: Provider, data: any): string {
 
 	return data.choices?.[0]?.message?.content || JSON.stringify(data);
 }
+
+// --- Streaming (fork issue #10) -------------------------------------------
+// Only the OpenAI-compatible default request shape streams (that covers the
+// local subscription proxies this exists for); provider-specific shapes fall
+// back to the non-streaming path transparently.
+
+export function supportsStreaming(provider: Provider): boolean {
+	const name = provider.name.toLowerCase();
+	if (name.includes('hugging') || name.includes('deepseek') || name.includes('anthropic')
+		|| name.includes('perplexity') || name.includes('ollama')) {
+		return false;
+	}
+	if (provider.baseUrl.includes('openai.azure.com')
+		|| provider.baseUrl.includes('generativelanguage.googleapis.com')) {
+		return false;
+	}
+	return true;
+}
+
+// Incremental SSE parser: buffers partial lines across chunk boundaries and
+// emits OpenAI-style delta contents in arrival order.
+export function createSseDeltaParser(): { push(chunk: string): string[] } {
+	let buffer = '';
+	return {
+		push(chunk: string): string[] {
+			buffer += chunk;
+			const deltas: string[] = [];
+			let newline;
+			while ((newline = buffer.indexOf('\n')) >= 0) {
+				const line = buffer.slice(0, newline).trim();
+				buffer = buffer.slice(newline + 1);
+				if (!line.startsWith('data:')) continue;
+				const data = line.slice(5).trim();
+				if (data === '[DONE]') continue;
+				try {
+					const parsed = JSON.parse(data);
+					const delta = parsed.choices?.[0]?.delta?.content;
+					if (typeof delta === 'string' && delta) deltas.push(delta);
+				} catch {
+					// Malformed event — skip it, keep the stream alive
+				}
+			}
+			return deltas;
+		}
+	};
+}
+
+interface StreamPortMessage {
+	type: 'chunk' | 'done' | 'error';
+	data?: string;
+	message?: string;
+	status?: number;
+}
+
+interface StreamPort {
+	postMessage(message: unknown): void;
+	disconnect(): void;
+	onMessage: { addListener(fn: (msg: unknown) => void): void };
+	onDisconnect: { addListener(fn: () => void): void };
+}
+
+// Stream a chat request through a long-lived port to the background (the
+// one-shot message channel cannot stream). Falls back to the non-streaming
+// path — delivering the full text as a single delta — when the provider
+// shape doesn't stream or ports are unavailable.
+export async function sendChatRequestStream(
+	provider: Provider,
+	model: ModelConfig,
+	parts: ChatMessageParts,
+	onDelta: (delta: string) => void
+): Promise<string> {
+	const fallback = async () => {
+		const full = await sendChatRequest(provider, model, parts);
+		onDelta(full);
+		return full;
+	};
+
+	if (!supportsStreaming(provider)) return fallback();
+
+	let port: StreamPort | null = null;
+	try {
+		port = (browser.runtime as unknown as { connect(opts: { name: string }): StreamPort })
+			.connect({ name: 'llm-stream' });
+	} catch {
+		port = null;
+	}
+	if (!port) return fallback();
+
+	const spec = buildChatRequest(provider, model, parts);
+	spec.body.stream = true;
+	const activePort = port;
+
+	return new Promise<string>((resolve, reject) => {
+		const parser = createSseDeltaParser();
+		let full = '';
+		let raw = '';
+		let settled = false;
+
+		const settle = (fn: () => void) => {
+			if (settled) return;
+			settled = true;
+			try { activePort.disconnect(); } catch { /* already gone */ }
+			fn();
+		};
+
+		activePort.onMessage.addListener((message: unknown) => {
+			const msg = message as StreamPortMessage;
+			if (msg.type === 'chunk' && typeof msg.data === 'string') {
+				raw += msg.data;
+				for (const delta of parser.push(msg.data)) {
+					full += delta;
+					onDelta(delta);
+				}
+			} else if (msg.type === 'done') {
+				if (full) {
+					settle(() => resolve(full));
+					return;
+				}
+				// The endpoint ignored stream=true and sent a plain JSON body
+				// (naive local proxies do this) — extract it like a normal reply
+				try {
+					const content = extractResponseContent(provider, JSON.parse(raw));
+					onDelta(content);
+					settle(() => resolve(content));
+				} catch {
+					settle(() => reject(new Error(`${provider.name} returned an empty stream.`)));
+				}
+			} else if (msg.type === 'error') {
+				const transportFailure = !msg.status || msg.status === 0;
+				if (transportFailure && isLocalEndpoint(spec.url)) {
+					settle(() => reject(new LocalEndpointUnreachableError(endpointOrigin(spec.url))));
+				} else {
+					settle(() => reject(new Error(`${provider.name} error: ${msg.message || `HTTP ${msg.status}`}`)));
+				}
+			}
+		});
+		activePort.onDisconnect.addListener(() => {
+			if (!settled) {
+				settled = true;
+				reject(new Error(`${provider.name} stream disconnected.`));
+			}
+		});
+		activePort.postMessage({
+			url: spec.url,
+			headers: spec.headers,
+			body: JSON.stringify(spec.body)
+		});
+	});
+}

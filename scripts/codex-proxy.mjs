@@ -79,17 +79,29 @@ const server = createServer(async (req, res) => {
 			const started = Date.now();
 			const content = await runCodex(prompt);
 			console.log(`[codex-proxy] answered in ${((Date.now() - started) / 1000).toFixed(1)}s: ${content.slice(0, 80)}…`);
-			res.writeHead(200, { 'Content-Type': 'application/json' });
-			res.end(JSON.stringify({
-				id: 'codex-proxy',
-				object: 'chat.completion',
-				model: body.model || 'codex',
-				choices: [{
-					index: 0,
-					message: { role: 'assistant', content },
-					finish_reason: 'stop'
-				}]
-			}));
+			if (body.stream) {
+				// codex exec is atomic, so the "stream" is one delta + DONE —
+				// enough for the extension's SSE path to work end to end
+				res.writeHead(200, {
+					'Content-Type': 'text/event-stream',
+					'Cache-Control': 'no-cache'
+				});
+				res.write(`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n\n`);
+				res.write('data: [DONE]\n\n');
+				res.end();
+			} else {
+				res.writeHead(200, { 'Content-Type': 'application/json' });
+				res.end(JSON.stringify({
+					id: 'codex-proxy',
+					object: 'chat.completion',
+					model: body.model || 'codex',
+					choices: [{
+						index: 0,
+						message: { role: 'assistant', content },
+						finish_reason: 'stop'
+					}]
+				}));
+			}
 		} catch (err) {
 			console.error('[codex-proxy] error:', err.message);
 			res.writeHead(500, { 'Content-Type': 'application/json' });

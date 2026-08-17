@@ -261,6 +261,36 @@ function isPopupOpen(tabId: number): boolean {
 	return popupPorts.hasOwnProperty(tabId);
 }
 
+// Streaming LLM requests (fork issue #10): the one-shot fetchProxy message
+// cannot stream, so extension pages open a long-lived port and receive the
+// response body in chunks as it downloads.
+browser.runtime.onConnect.addListener((port) => {
+	if (port.name !== 'llm-stream') return;
+	port.onMessage.addListener(async (request: unknown) => {
+		const { url, headers, body } = request as { url: string; headers?: Record<string, string>; body?: string };
+		try {
+			const resp = await fetch(url, { method: 'POST', headers, body });
+			if (!resp.ok || !resp.body) {
+				const text = await resp.text().catch(() => '');
+				port.postMessage({ type: 'error', status: resp.status, message: text || `HTTP ${resp.status}` });
+				return;
+			}
+			const reader = resp.body.getReader();
+			const decoder = new TextDecoder();
+			while (true) {
+				const { done, value } = await reader.read();
+				if (done) break;
+				port.postMessage({ type: 'chunk', data: decoder.decode(value, { stream: true }) });
+			}
+			port.postMessage({ type: 'done' });
+		} catch (error) {
+			try {
+				port.postMessage({ type: 'error', status: 0, message: (error as Error).message });
+			} catch { /* port already closed */ }
+		}
+	});
+});
+
 browser.runtime.onConnect.addListener((port) => {
 	if (port.name === 'popup') {
 		const tabId = port.sender?.tab?.id;

@@ -4,7 +4,7 @@
 // structured translation that comes back. No internal mocking.
 import { describe, test, expect, beforeEach, afterEach, vi } from 'vitest';
 import browser from './browser-polyfill';
-import { translateSelection, translatePassage, translateBatchLlm, TranslationUnavailableError, clearTranslationCache } from './translator';
+import { translateSelection, translatePassage, translatePassageStream, translateBatchLlm, TranslationUnavailableError, clearTranslationCache } from './translator';
 import { generalSettings } from './storage-utils';
 import { SelectionContext } from './translator-context';
 
@@ -258,6 +258,109 @@ describe('translateBatchLlm (full-article batches)', () => {
 		const result = await translateBatchLlm(['a'], 'zh', ARTICLE, []);
 
 		expect(result.keyTerms).toEqual([]);
+	});
+});
+
+describe('translatePassageStream', () => {
+	const sendMessage = vi.spyOn(browser.runtime, 'sendMessage');
+
+	const passageCtx: SelectionContext = {
+		...CTX,
+		selectedText: 'The bank raised rates. Markets fell.',
+		kind: 'passage',
+		neighbors: {}
+	};
+
+	function sse(content: string): string {
+		return `data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n`;
+	}
+
+	function stubPort(script: Array<Record<string, unknown>>) {
+		const listeners: Array<(msg: unknown) => void> = [];
+		const port = {
+			name: 'llm-stream',
+			postMessage: vi.fn(() => {
+				queueMicrotask(() => {
+					for (const msg of script) listeners.forEach(l => l(msg));
+				});
+			}),
+			disconnect: vi.fn(),
+			onMessage: { addListener: (fn: (msg: unknown) => void) => listeners.push(fn) },
+			onDisconnect: { addListener: vi.fn() }
+		};
+		(browser.runtime as any).connect = vi.fn(() => port);
+		return port;
+	}
+
+	function configureStreamingLlm() {
+		generalSettings.interpreterEnabled = true;
+		generalSettings.interpreterModel = 'model-1';
+		generalSettings.models = [
+			{ id: 'model-1', providerId: 'provider-1', providerModelId: 'codex', name: 'Codex', enabled: true }
+		];
+		generalSettings.providers = [
+			{ id: 'provider-1', name: 'Local proxy', baseUrl: 'http://127.0.0.1:1455/v1/chat/completions', apiKey: '', apiKeyRequired: false }
+		];
+	}
+
+	beforeEach(() => {
+		sendMessage.mockReset();
+		clearTranslationCache();
+	});
+
+	afterEach(() => {
+		delete (browser.runtime as any).connect;
+	});
+
+	test('streams deltas in order for an OpenAI-compatible provider (plain-text protocol)', async () => {
+		configureStreamingLlm();
+		const port = stubPort([
+			{ type: 'chunk', data: sse('银行加息了。') },
+			{ type: 'chunk', data: sse('市场应声下跌。') },
+			{ type: 'done' }
+		]);
+		const deltas: string[] = [];
+
+		const result = await translatePassageStream(passageCtx, 'zh', d => deltas.push(d));
+
+		expect(deltas).toEqual(['银行加息了。', '市场应声下跌。']);
+		expect(result.translation).toBe('银行加息了。市场应声下跌。');
+		expect(result.engineLabel).toBe('Codex');
+		// The streamed protocol asks for plain text, not JSON
+		const body = JSON.parse((port.postMessage as any).mock.calls[0][0].body);
+		expect(body.messages[0].content).toMatch(/translated text only/i);
+		expect(body.stream).toBe(true);
+	});
+
+	test('a streamed passage lands in the cache shared with the non-streaming path', async () => {
+		configureStreamingLlm();
+		stubPort([{ type: 'chunk', data: sse('译文。') }, { type: 'done' }]);
+
+		await translatePassageStream(passageCtx, 'zh', () => {});
+		const cachedDeltas: string[] = [];
+		const cached = await translatePassageStream(passageCtx, 'zh', d => cachedDeltas.push(d));
+
+		expect(cached.translation).toBe('译文。');
+		// Cache hit delivers the full text as one delta, no new stream
+		expect(cachedDeltas).toEqual(['译文。']);
+	});
+
+	test('non-streaming providers fall back to translatePassage with one delta', async () => {
+		configureLlm(); // Anthropic — provider-specific shape, no streaming
+		sendMessage.mockResolvedValue({
+			ok: true,
+			status: 200,
+			text: JSON.stringify({
+				content: [{ type: 'text', text: JSON.stringify({ translation: '整包段落译文。' }) }],
+				stop_reason: 'end_turn'
+			})
+		});
+		const deltas: string[] = [];
+
+		const result = await translatePassageStream(passageCtx, 'zh', d => deltas.push(d));
+
+		expect(result.translation).toBe('整包段落译文。');
+		expect(deltas).toEqual(['整包段落译文。']);
 	});
 });
 

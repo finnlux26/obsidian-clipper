@@ -441,6 +441,50 @@ describe('openTranslationPopover', () => {
 		expect(document.querySelectorAll('.obsidian-reader-translation')).toHaveLength(2);
 	});
 
+	test('passage translation streams into the popover before completion', async () => {
+		generalSettings.providers = [
+			{ id: 'provider-1', name: 'Local proxy', baseUrl: 'http://127.0.0.1:1455/v1/chat/completions', apiKey: '', apiKeyRequired: false }
+		];
+		generalSettings.models = [
+			{ id: 'model-1', providerId: 'provider-1', providerModelId: 'codex', name: 'Codex', enabled: true }
+		];
+		let release!: () => void;
+		const gate = new Promise<void>(resolve => { release = resolve; });
+		const listeners: Array<(msg: unknown) => void> = [];
+		const sse = (content: string) =>
+			`data: ${JSON.stringify({ choices: [{ delta: { content } }] })}\n`;
+		(browser.runtime as any).connect = vi.fn(() => ({
+			name: 'llm-stream',
+			postMessage: vi.fn(async () => {
+				listeners.forEach(l => l({ type: 'chunk', data: sse('银行加息了。') }));
+				await gate;
+				listeners.forEach(l => l({ type: 'chunk', data: sse('市场应声下跌。') }));
+				listeners.forEach(l => l({ type: 'done' }));
+			}),
+			disconnect: vi.fn(),
+			onMessage: { addListener: (fn: (msg: unknown) => void) => listeners.push(fn) },
+			onDisconnect: { addListener: vi.fn() }
+		}));
+
+		try {
+			const popover = openTranslationPopover(document, passageCtxFromDom(), 'zh');
+
+			// First delta is visible while the request is still pending
+			await vi.waitFor(() => {
+				expect(popover.textContent).toContain('银行加息了。');
+			});
+			expect(popover.getAttribute('data-state')).toBe('pending');
+
+			release();
+			await vi.waitFor(() => expect(popover.getAttribute('data-state')).toBe('done'));
+			expect(popover.textContent).toContain('银行加息了。市场应声下跌。');
+			expect(popover.querySelector('button.obsidian-translate-insert')).not.toBeNull();
+			expect(popover.querySelector('.obsidian-translate-engine')?.textContent).toBe('Codex');
+		} finally {
+			delete (browser.runtime as any).connect;
+		}
+	});
+
 	test('over-long passage selections get a split hint instead of a silent truncation', async () => {
 		proxyRepliesWith({ translation: 'x' });
 		const ctx = { ...passageCtxFromDom(), selectedText: 'y'.repeat(3200) };
