@@ -4,7 +4,7 @@
 // copy assertions use the resolved en locale strings.
 import { describe, test, expect, beforeEach, vi } from 'vitest';
 import browser from './browser-polyfill';
-import { shouldOfferTranslation, openTranslationPopover } from './reader-translation';
+import { shouldOfferTranslation, openTranslationPopover, getTargetLanguage } from './reader-translation';
 import { clearTranslationCache } from './translator';
 import { clearPhoneticsCache } from './dictionary';
 import { generalSettings } from './storage-utils';
@@ -56,6 +56,40 @@ const READER_DOM = `
 		</article>
 	</div>
 	<p id="outside">Text outside the reader article mentions a bank too.</p>`;
+
+describe('getTargetLanguage', () => {
+	beforeEach(() => {
+		generalSettings.readerSettings = {
+			...generalSettings.readerSettings,
+			translationTargetLanguage: undefined
+		};
+		(browser.i18n as any).getUILanguage = () => 'en-US';
+		Object.defineProperty(window.navigator, 'languages', {
+			value: ['en-US', 'zh-CN'],
+			configurable: true
+		});
+	});
+
+	test('English article + English UI: picks the first preference that differs (zh-CN)', () => {
+		expect(getTargetLanguage('en')).toBe('zh-CN');
+	});
+
+	test('Chinese article: the English UI language is already a valid target', () => {
+		expect(getTargetLanguage('zh-CN')).toBe('en-US');
+	});
+
+	test('unknown article language falls back to the UI language', () => {
+		expect(getTargetLanguage('')).toBe('en-US');
+	});
+
+	test('a stored override always wins', () => {
+		generalSettings.readerSettings = {
+			...generalSettings.readerSettings,
+			translationTargetLanguage: 'ja'
+		};
+		expect(getTargetLanguage('en')).toBe('ja');
+	});
+});
 
 describe('shouldOfferTranslation', () => {
 	beforeEach(() => {

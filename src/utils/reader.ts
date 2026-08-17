@@ -342,11 +342,14 @@ export class Reader {
 		doc.body.appendChild(outlineOverlay);
 
 		// Full-article bilingual toggle
-		const fullTranslationOpts = () => ({
-			targetLanguage: getTargetLanguage(),
-			article: articleMetaFromDocument(doc),
-			url: doc.location?.href || ''
-		});
+		const fullTranslationOpts = () => {
+			const articleMeta = articleMetaFromDocument(doc);
+			return {
+				targetLanguage: getTargetLanguage(articleMeta.lang),
+				article: articleMeta,
+				url: doc.location?.href || ''
+			};
+		};
 		const translateBtn = createFullTranslationNavButton(doc, fullTranslationOpts);
 
 		const triggerGroup = doc.createElement('div');
@@ -2296,9 +2299,10 @@ export class Reader {
 			if (fullTranslationUrl) {
 				wasFullTranslationEnabled(fullTranslationUrl).then(enabled => {
 					if (enabled && Reader.isActive) {
+						const articleMeta = articleMetaFromDocument(doc);
 						enableFullTranslation(doc, {
-							targetLanguage: getTargetLanguage(),
-							article: articleMetaFromDocument(doc),
+							targetLanguage: getTargetLanguage(articleMeta.lang),
+							article: articleMeta,
 							url: fullTranslationUrl
 						});
 						doc.querySelector(`.${FULL_TRANSLATION_NAV_BUTTON_CLASS}`)?.classList.add('is-active');

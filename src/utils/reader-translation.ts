@@ -101,13 +101,32 @@ function setState(popover: HTMLElement, state: PopoverState) {
 	popover.setAttribute('data-state', state);
 }
 
-export function getTargetLanguage(): string {
-	// Stored override first (no settings UI yet — a later ticket adds it),
-	// then the extension UI language, then the browser language
+function primaryTag(lang: string): string {
+	return (lang || '').split('-')[0].toLowerCase();
+}
+
+// Stored override first (no settings UI yet — a later ticket adds it). The
+// default walks the user's language preferences and picks the first one that
+// DIFFERS from the article's language: an English-UI browser reading an
+// English article should translate into the user's other language (e.g.
+// zh-CN from navigator.languages), not "translate" English into English.
+export function getTargetLanguage(articleLang?: string): string {
 	const override = generalSettings.readerSettings?.translationTargetLanguage;
 	if (override) return override;
+
+	const candidates: string[] = [];
 	const uiLanguage = (browser.i18n as { getUILanguage?: () => string }).getUILanguage?.();
-	return uiLanguage || navigator.language || 'en';
+	if (uiLanguage) candidates.push(uiLanguage);
+	if (typeof navigator !== 'undefined') {
+		if (Array.isArray(navigator.languages)) candidates.push(...navigator.languages);
+		if (navigator.language) candidates.push(navigator.language);
+	}
+
+	const article = primaryTag(articleLang || '');
+	const differing = article
+		? candidates.find(lang => lang && primaryTag(lang) !== article)
+		: undefined;
+	return differing || candidates[0] || 'en';
 }
 
 export function articleMetaFromDocument(doc: Document): ArticleMeta {
@@ -302,7 +321,9 @@ export function openTranslationPopover(
 	header.className = 'obsidian-translate-header';
 	const word = doc.createElement('span');
 	word.className = 'obsidian-translate-word';
-	word.textContent = ctx.selectedText;
+	word.textContent = ctx.selectedText.length > 80
+		? ctx.selectedText.slice(0, 80) + '…'
+		: ctx.selectedText;
 	header.appendChild(word);
 	const close = doc.createElement('button');
 	close.type = 'button';
@@ -440,7 +461,7 @@ export function registerSelectionTranslation(doc: Document, isActive: () => bool
 		const rects = range.getClientRects();
 		const last = rects.length > 0 ? rects[rects.length - 1] : undefined;
 		hide();
-		openTranslationPopover(doc, ctx, getTargetLanguage(),
+		openTranslationPopover(doc, ctx, getTargetLanguage(ctx.article.lang),
 			last ? { left: last.left, bottom: last.bottom } : undefined);
 	});
 	doc.body.appendChild(btn);
