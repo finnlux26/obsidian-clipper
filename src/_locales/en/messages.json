@@ -1064,6 +1064,9 @@
 	"translationDegraded": {
 		"message": "Basic translation. Set up an Interpreter model in settings for context-aware results."
 	},
+	"translationEngineBrowser": {
+		"message": "On-device translation"
+	},
 	"translationFailed": {
 		"message": "Translation failed. Please try again."
 	},

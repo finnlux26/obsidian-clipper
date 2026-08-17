@@ -474,6 +474,14 @@ body.obsidian-highlighter-active {
 		font-size: 11px;
 	}
 
+	.obsidian-translate-engine {
+		margin-top: 8px;
+		color: #6f6f6f;
+		font-size: 10px;
+		letter-spacing: 0.04em;
+		text-transform: uppercase;
+	}
+
 	&[data-state="pending"] .obsidian-translate-body {
 		color: #a0a0a0;
 	}

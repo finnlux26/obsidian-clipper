@@ -19,6 +19,10 @@ export interface WordTranslation {
 	// Set by the browser engine: a plain whole-sentence translation without
 	// word-sense analysis — the UI shows an upgrade hint (issue #7)
 	degraded?: boolean;
+	// Which engine produced this result, surfaced as a badge in the popover
+	engine?: 'llm' | 'browser';
+	// Display label for the LLM engine (the configured model's name)
+	engineLabel?: string;
 }
 
 export interface TranslateWordRequest {
@@ -28,6 +32,8 @@ export interface TranslateWordRequest {
 
 export interface PassageTranslation {
 	translation: string;
+	engine?: 'llm' | 'browser';
+	engineLabel?: string;
 }
 
 // The engine could not run at all (nothing configured). UI shows an
@@ -167,7 +173,7 @@ class LlmTranslationEngine implements TranslationEngine {
 			context,
 			payload
 		});
-		return parseWordTranslation(content);
+		return { ...parseWordTranslation(content), engine: 'llm' as const, engineLabel: target.model.name };
 	}
 
 	async translatePassage(request: TranslateWordRequest): Promise<PassageTranslation> {
@@ -195,7 +201,7 @@ class LlmTranslationEngine implements TranslationEngine {
 			context,
 			payload
 		});
-		return parsePassageTranslation(content);
+		return { ...parsePassageTranslation(content), engine: 'llm' as const, engineLabel: target.model.name };
 	}
 }
 
@@ -268,17 +274,17 @@ class BrowserTranslationEngine implements TranslationEngine {
 	async translateWord(request: TranslateWordRequest): Promise<WordTranslation> {
 		const { source, target } = this.languagesFor(request);
 		const sentence = request.ctx.sentence;
-		if (source === target) return { translation: sentence, degraded: true };
+		if (source === target) return { translation: sentence, degraded: true, engine: 'browser' as const };
 		const translator = await this.instance(source, target);
-		return { translation: await translator.translate(sentence), degraded: true };
+		return { translation: await translator.translate(sentence), degraded: true, engine: 'browser' as const };
 	}
 
 	async translatePassage(request: TranslateWordRequest): Promise<PassageTranslation> {
 		const { source, target } = this.languagesFor(request);
 		const text = request.ctx.selectedText;
-		if (source === target) return { translation: text };
+		if (source === target) return { translation: text, engine: 'browser' as const };
 		const translator = await this.instance(source, target);
-		return { translation: await translator.translate(text) };
+		return { translation: await translator.translate(text), engine: 'browser' as const };
 	}
 
 	async translateText(text: string, articleLang: string, targetLanguage: string): Promise<string> {

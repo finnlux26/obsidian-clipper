@@ -60,7 +60,7 @@ describe('translateSelection (LLM engine)', () => {
 
 		const result = await translateSelection(CTX, 'zh');
 
-		expect(result).toEqual(WORD_RESULT);
+		expect(result).toMatchObject(WORD_RESULT);
 		expect(sendMessage).toHaveBeenCalledTimes(1);
 		const message = sendMessage.mock.calls[0][0] as any;
 		expect(message.action).toBe('fetchProxy');
@@ -109,8 +109,8 @@ describe('translateSelection (LLM engine)', () => {
 			translateSelection(CTX, 'zh')
 		]);
 
-		expect(a).toEqual(WORD_RESULT);
-		expect(b).toEqual(WORD_RESULT);
+		expect(a).toMatchObject(WORD_RESULT);
+		expect(b).toMatchObject(WORD_RESULT);
 		expect(sendMessage).toHaveBeenCalledTimes(1);
 	});
 

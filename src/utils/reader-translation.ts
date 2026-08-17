@@ -249,6 +249,9 @@ function renderResult(doc: Document, popover: HTMLElement, result: WordTranslati
 		body.appendChild(row);
 	}
 
+	const badge = buildEngineBadge(doc, result);
+	if (badge) body.appendChild(badge);
+
 	setState(popover, 'done');
 }
 
@@ -282,7 +285,21 @@ function renderPassageResult(
 		body.appendChild(insert);
 	}
 
+	const badge = buildEngineBadge(doc, result);
+	if (badge) body.appendChild(badge);
+
 	setState(popover, 'done');
+}
+
+function buildEngineBadge(doc: Document, result: { engine?: 'llm' | 'browser'; engineLabel?: string }): HTMLElement | null {
+	const label = result.engine === 'browser'
+		? getMessage('translationEngineBrowser')
+		: result.engineLabel;
+	if (!label) return null;
+	const badge = doc.createElement('div');
+	badge.className = 'obsidian-translate-engine';
+	badge.textContent = label;
+	return badge;
 }
 
 function renderError(popover: HTMLElement, error: unknown) {

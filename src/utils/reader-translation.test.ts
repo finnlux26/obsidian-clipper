@@ -193,6 +193,8 @@ describe('openTranslationPopover', () => {
 		expect(popover.textContent).toContain('noun');
 		expect(popover.textContent).toContain('此处指金融机构。');
 		expect(popover.textContent).toContain('河岸');
+		// Engine badge names the configured model
+		expect(popover.querySelector('.obsidian-translate-engine')?.textContent).toBe('Haiku');
 	});
 
 	test('opening a second popover replaces the first', async () => {
@@ -465,6 +467,8 @@ describe('openTranslationPopover', () => {
 			expect(popover.textContent).toContain(`译:${CTX.sentence}`);
 			// The upgrade hint pointing at the Interpreter settings
 			expect(popover.textContent).toContain('Basic translation');
+			// Engine badge marks the on-device engine
+			expect(popover.querySelector('.obsidian-translate-engine')?.textContent).toBe('On-device translation');
 		} finally {
 			delete (globalThis as any).Translator;
 		}
