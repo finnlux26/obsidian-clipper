@@ -27,8 +27,10 @@ export interface FullTranslationOptions {
 
 const TRANSLATION_NODE_CLASS = 'obsidian-reader-translation';
 export const FULL_TRANSLATION_NAV_BUTTON_CLASS = 'nav-btn-translate';
-const CONTENT_BLOCK_SELECTOR = 'p, li, blockquote, h2, h3, h4, h5, h6, figcaption, dd, dt, td, th';
-const SKIP_CONTAINER_SELECTOR = 'pre, code, .transcript-segment, .youtube.transcript';
+// .transcript-segment-text: the text wrapper wireTranscript creates per
+// YouTube transcript segment — the timestamps (<strong>) stay untranslated
+const CONTENT_BLOCK_SELECTOR = 'p, li, blockquote, h2, h3, h4, h5, h6, figcaption, dd, dt, td, th, .transcript-segment-text';
+const SKIP_CONTAINER_SELECTOR = 'pre, code';
 
 // LLM batches pack consecutive blocks up to this budget (chars)
 const BATCH_CHAR_BUDGET = 2500;
@@ -80,7 +82,13 @@ function cacheKeyFor(text: string, targetLanguage: string): string {
 }
 
 function insertNode(doc: Document, block: HTMLElement, hash: string): HTMLElement {
-	return ensureTranslationNode(doc, block, hash, 'full');
+	const node = ensureTranslationNode(doc, block, hash, 'full');
+	// A visible placeholder — an empty pending node renders as a barely
+	// visible 2px rule, which reads as "the button did nothing"
+	if (node.getAttribute('data-state') === 'pending' && !node.textContent) {
+		node.textContent = getMessage('translationLoading');
+	}
+	return node;
 }
 
 function fillNode(node: HTMLElement, translation: string): void {

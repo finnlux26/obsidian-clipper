@@ -72,7 +72,7 @@ const ARTICLE_DOM = `
 			<p id="p2">Second paragraph about rates.</p>
 			<pre><code>const rate = 0.05;</code></pre>
 			<div class="youtube transcript">
-				<div class="transcript-segment"><strong>0:01</strong> transcript line</div>
+				<div class="transcript-segment"><strong class="timestamp">0:01</strong><div class="transcript-segment-text" id="seg1">transcript line about banks</div></div>
 			</div>
 			<p id="p3">Third paragraph about markets.</p>
 		</article>
@@ -98,15 +98,39 @@ describe('full-article translation', () => {
 		vi.unstubAllGlobals();
 	});
 
-	test('observes content blocks but skips code, transcript and headings-h1', () => {
+	test('observes content blocks and transcript text, skips code and timestamps', () => {
 		enableFullTranslation(document, OPTS);
 
 		const observedIds = io().observed.map(el => el.id || el.tagName.toLowerCase());
 		expect(observedIds).toContain('p1');
 		expect(observedIds).toContain('p2');
 		expect(observedIds).toContain('p3');
+		// Transcript segment TEXT translates; the timestamps do not
+		expect(observedIds).toContain('seg1');
 		expect(io().observed.some(el => el.closest('pre'))).toBe(false);
-		expect(io().observed.some(el => el.closest('.transcript-segment'))).toBe(false);
+		expect(io().observed.some(el => el.matches('strong, .timestamp'))).toBe(false);
+	});
+
+	test('pending nodes show a visible loading placeholder', async () => {
+		let release!: () => void;
+		const gate = new Promise<void>(resolve => { release = resolve; });
+		const translate = vi.fn(async (text: string) => { await gate; return `译:${text}`; });
+		(globalThis as any).Translator = {
+			availability: vi.fn(async () => 'available'),
+			create: vi.fn(async () => ({ translate }))
+		};
+		enableFullTranslation(document, OPTS);
+
+		io().trigger([document.getElementById('p1')!]);
+		await settle(2);
+
+		const node = document.getElementById('p1')!.nextElementSibling as HTMLElement;
+		expect(node.getAttribute('data-state')).toBe('pending');
+		expect((node.textContent || '').length).toBeGreaterThan(0);
+
+		release();
+		await settle();
+		expect(node.getAttribute('data-state')).toBe('done');
 	});
 
 	test('browser engine: intersecting blocks get pending → done comparison nodes', async () => {
