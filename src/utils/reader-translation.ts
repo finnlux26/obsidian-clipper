@@ -51,7 +51,11 @@ export function ensureTranslationNode(
 	hash: string,
 	origin: 'manual' | 'full'
 ): HTMLElement {
-	const appendInside = APPEND_INSIDE_TAGS.has(block.tagName);
+	// Transcript segments are a timestamp/text flex row — a sibling would
+	// become a third column and crush the text; same append-inside handling
+	// as list items and table cells
+	const appendInside = APPEND_INSIDE_TAGS.has(block.tagName)
+		|| block.classList.contains('transcript-segment-text');
 	// Origin-scoped matching: a manual comparison and the full-article mode
 	// may hash the same paragraph identically — they must never adopt each
 	// other's nodes (full-mode cache would overwrite a manual translation;
@@ -75,7 +79,18 @@ export function ensureTranslationNode(
 	} else {
 		block.after(node);
 	}
+	notifyTranslationMutation(doc);
 	return node;
+}
+
+// Inserting/filling translation nodes shifts layout, which makes the
+// browser's scroll anchoring emit scroll events. Announce our mutations so
+// scroll-sensitive features (transcript auto-scroll) can tell them apart
+// from real user scrolls.
+export const TRANSLATION_MUTATION_EVENT = 'obsidian-translation-mutation';
+
+export function notifyTranslationMutation(doc: Document): void {
+	doc.defaultView?.dispatchEvent(new CustomEvent(TRANSLATION_MUTATION_EVENT));
 }
 
 // Insert the translated paragraph as a comparison node. The original block

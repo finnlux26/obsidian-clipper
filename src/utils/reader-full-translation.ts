@@ -16,7 +16,7 @@ import {
 	hasLlmEngine,
 	translateBatchLlm
 } from './translator';
-import { ensureTranslationNode, hashText } from './reader-translation';
+import { ensureTranslationNode, hashText, notifyTranslationMutation } from './reader-translation';
 import { debugLog } from './debug';
 
 export interface FullTranslationOptions {
@@ -94,11 +94,13 @@ function insertNode(doc: Document, block: HTMLElement, hash: string): HTMLElemen
 function fillNode(node: HTMLElement, translation: string): void {
 	node.textContent = translation;
 	node.setAttribute('data-state', 'done');
+	notifyTranslationMutation(node.ownerDocument);
 }
 
 function failNode(node: HTMLElement): void {
 	node.textContent = getMessage('translationFailed');
 	node.setAttribute('data-state', 'error');
+	notifyTranslationMutation(node.ownerDocument);
 }
 
 function mergeGlossary(state: FullTranslationState, terms: GlossaryEntry[]): void {

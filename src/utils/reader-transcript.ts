@@ -1,4 +1,5 @@
 import { getMessage } from './i18n';
+import { TRANSLATION_MUTATION_EVENT } from './reader-translation';
 
 // CJK-aware text boundary helpers
 const SENT_END = /[.!?。！？]/;
@@ -237,8 +238,16 @@ export function wireTranscript(
 	let scrubbing = false;
 	let lastScrub = 0;
 
+	// Translation nodes filling in shift the layout, and scroll anchoring
+	// answers with scroll events; treating those as user scrolls would keep
+	// auto-scroll in its cooldown forever while translations load
+	let lastTranslationMutation = 0;
+	window.addEventListener(TRANSLATION_MUTATION_EVENT, () => {
+		lastTranslationMutation = Date.now();
+	});
 	window.addEventListener('scroll', () => {
 		if (scroll.programmaticScroll() || scrubbing) return;
+		if (Date.now() - lastTranslationMutation < 400) return;
 		lastUserScroll = Date.now();
 	}, { passive: true });
 

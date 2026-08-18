@@ -133,6 +133,23 @@ describe('full-article translation', () => {
 		expect(node.getAttribute('data-state')).toBe('done');
 	});
 
+	test('transcript text gets the translation inside its wrapper, not as a flex sibling', async () => {
+		stubBrowserTranslator();
+		enableFullTranslation(document, OPTS);
+
+		io().trigger([document.getElementById('seg1')!]);
+		await settle();
+
+		const seg = document.getElementById('seg1')!;
+		// Inside the text wrapper (a sibling would become a third flex column
+		// in the timestamp/text row and crush the original text)
+		const inserted = seg.querySelector(':scope > .obsidian-reader-translation') as HTMLElement;
+		expect(inserted).not.toBeNull();
+		expect(inserted.textContent).toBe('译:transcript line about banks');
+		// The segment row itself still has exactly two children
+		expect(seg.parentElement!.children).toHaveLength(2);
+	});
+
 	test('browser engine: intersecting blocks get pending → done comparison nodes', async () => {
 		const translate = stubBrowserTranslator();
 		enableFullTranslation(document, OPTS);
