@@ -2035,13 +2035,15 @@ export class Reader {
 				if (videoElement) {
 					videoTimestamp = Math.floor(videoElement.currentTime);
 					videoWasPlaying = !videoElement.paused;
-					// Chromium's iframe embed works via declarativeNetRequest.
-					// Safari/Firefox can't modify headers, so we preserve
-					// the native video element instead.
-					if (!['chrome', 'brave', 'edge'].includes(browserType)) {
-						youtubeVideoElement = videoElement;
-						videoElement.remove();
-					}
+					// Preserve the native video element on every browser. The
+					// Chromium iframe embed plays, but its JS API is rejected:
+					// the declarativeNetRequest Referer rewrite makes the widget
+					// see a different embedding origin than the `origin` param,
+					// so it never establishes the postMessage bridge — killing
+					// transcript time sync (auto-scroll, active line, seek).
+					// The native element gives us timeupdate directly.
+					youtubeVideoElement = videoElement;
+					videoElement.remove();
 				}
 			}
 
