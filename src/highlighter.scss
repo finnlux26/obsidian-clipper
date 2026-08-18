@@ -497,6 +497,9 @@ body.obsidian-highlighter-active {
 	opacity: 0.82;
 	border-inline-start: 2px solid currentColor;
 	padding-inline-start: 0.75em;
+	// Hang the rule in the left gutter so the translated text left-aligns
+	// exactly with the original text above it
+	margin-inline-start: calc(-0.75em - 2px);
 	margin-block: 0.5em 1.25em;
 
 	&[data-state="pending"] {
@@ -513,6 +516,12 @@ body.obsidian-highlighter-active {
 @keyframes obsidianTranslationPending {
 	from { opacity: 0.3; }
 	to { opacity: 0.7; }
+}
+
+// Inside transcript segments the translation sits within the text column;
+// tighter vertical rhythm so segments don't balloon
+.transcript-segment .obsidian-reader-translation {
+	margin-block: 0.4em 0.2em;
 }
 
 @keyframes clipperOpenAnimation {
