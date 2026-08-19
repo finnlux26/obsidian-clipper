@@ -199,6 +199,26 @@ export function wireTranscript(
 		return parseFloat(ts?.getAttribute('data-timestamp') || '0');
 	});
 
+	// Geometry mapping between playback time and vertical position must use
+	// the ORIGINAL text extent: inserted translation nodes make the segment
+	// taller, and mapping progress onto the full rect would walk the
+	// indicator into the translated text (fork issue #9)
+	const originalContentRect = (seg: HTMLElement): DOMRect => {
+		const textEl = seg.querySelector('.transcript-segment-text') as HTMLElement | null;
+		if (!textEl) return seg.getBoundingClientRect();
+		const translation = textEl.querySelector(':scope > .obsidian-reader-translation');
+		if (!translation) return textEl.getBoundingClientRect();
+		const range = doc.createRange();
+		range.selectNodeContents(textEl);
+		range.setEndBefore(translation);
+		const rect = range.getBoundingClientRect();
+		return rect.height > 0 ? rect : textEl.getBoundingClientRect();
+	};
+
+	const insideTranslation = (node: Node | null): boolean =>
+		!!(node && (node.nodeType === Node.ELEMENT_NODE ? node as Element : node.parentElement)
+			?.closest('.obsidian-reader-translation'));
+
 	const FALLBACK_SEGMENT_DURATION = 30;
 	const AUTO_SCROLL_COOLDOWN = 2000;
 	const getSegmentEnd = (i: number) =>
@@ -306,7 +326,7 @@ export function wireTranscript(
 		}
 		// Update progress line on the scrub track
 		if (activeSegment && activeIndex >= 0) {
-			const segRect = activeSegment.getBoundingClientRect();
+			const segRect = originalContentRect(activeSegment);
 			const trackRect = scrubTrack.getBoundingClientRect();
 			const start = segmentTimes[activeIndex];
 			const end = getSegmentEnd(activeIndex);
@@ -604,8 +624,11 @@ export function wireTranscript(
 		hoverHighlight.clear();
 		const seg = (e.target as HTMLElement).closest('.transcript-segment-text');
 		if (!seg) return;
+		// Translated text is not seekable source material — no word hover there
+		if (insideTranslation(e.target as Node)) return;
 		const caret = getCaretNode(e.clientX, e.clientY);
 		if (!caret || caret.node.nodeType !== Node.TEXT_NODE || !seg.contains(caret.node)) return;
+		if (insideTranslation(caret.node)) return;
 		const range = getHoverRange(caret.node, caret.offset);
 		if (range) hoverHighlight.add(range);
 	};
@@ -628,11 +651,16 @@ export function wireTranscript(
 	positionTrack();
 
 	const getTimeFromY = (clientY: number): number => {
-		// Find which segment the Y position falls within
+		// Find which segment the Y position falls within (whole rect), but
+		// map progress against the original text only — clicks level with a
+		// translation clamp to the segment's end
 		for (let i = segments.length - 1; i >= 0; i--) {
 			const rect = segments[i].getBoundingClientRect();
 			if (clientY >= rect.top) {
-				const progress = Math.min(1, (clientY - rect.top) / rect.height);
+				const contentRect = originalContentRect(segments[i]);
+				const progress = contentRect.height > 0
+					? Math.min(1, Math.max(0, (clientY - contentRect.top) / contentRect.height))
+					: 0;
 				const start = segmentTimes[i];
 				const end = getSegmentEnd(i);
 				return start + progress * (end - start);
@@ -675,25 +703,31 @@ export function wireTranscript(
 		const start = segmentTimes[idx];
 		const end = getSegmentEnd(idx);
 
-		// Use caret position to estimate character-level progress
+		// Use caret position to estimate character-level progress — measured
+		// against the original text only, never the inserted translation
 		const textEl = seg.querySelector('.transcript-segment-text');
 		if (textEl) {
-			const totalLen = (textEl.textContent || '').length;
-			if (totalLen > 0) {
+			const translation = textEl.querySelector(':scope > .obsidian-reader-translation');
+			let originalLen = (textEl.textContent || '').length;
+			if (translation) originalLen -= (translation.textContent || '').length;
+			if (originalLen > 0) {
 				const caret = getCaretNode(e.clientX, e.clientY);
-				let charOffset = totalLen;
-				if (caret && caret.node.nodeType === Node.TEXT_NODE && textEl.contains(caret.node)) {
+				let charOffset = originalLen;
+				if (caret && caret.node.nodeType === Node.TEXT_NODE && textEl.contains(caret.node)
+					&& !insideTranslation(caret.node)) {
 					charOffset = caret.offset;
 				}
-				const progress = Math.min(1, Math.max(0, charOffset / totalLen));
+				const progress = Math.min(1, Math.max(0, charOffset / originalLen));
 				seekTo(start + progress * (end - start));
 				return;
 			}
 		}
 
-		// Fallback to Y position
-		const rect = seg.getBoundingClientRect();
-		const progress = Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height));
+		// Fallback to Y position against the original text extent
+		const rect = originalContentRect(seg);
+		const progress = rect.height > 0
+			? Math.min(1, Math.max(0, (e.clientY - rect.top) / rect.height))
+			: 0;
 		seekTo(start + progress * (end - start));
 	});
 }
