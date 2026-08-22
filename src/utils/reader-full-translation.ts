@@ -75,20 +75,90 @@ function blockText(block: HTMLElement): string {
 	return (block.textContent || '').replace(/\s+/g, ' ').trim();
 }
 
+// A <br>-separated block (YouTube descriptions arrive as one <p> with
+// dozens of <br> line breaks) translates per line, not as one giant unit —
+// otherwise the whole description renders as a single translation slab at
+// the block's end instead of under each line.
+interface LineUnit {
+	text: string;
+	// The <br> ending the line; the translation span goes right after it.
+	// null → last line, append at the block end.
+	anchor: ChildNode | null;
+}
+
+function splitBrLines(block: HTMLElement): LineUnit[] | null {
+	const lines: LineUnit[] = [];
+	let text = '';
+	let sawBr = false;
+	const closeLine = (anchor: ChildNode | null) => {
+		const t = text.replace(/\s+/g, ' ').trim();
+		if (t.length >= 2) lines.push({ text: t, anchor });
+		text = '';
+	};
+	for (const child of Array.from(block.childNodes)) {
+		const el = child.nodeType === 1 ? (child as HTMLElement) : null;
+		if (el && el.tagName === 'BR') {
+			sawBr = true;
+			closeLine(child);
+		} else if (el && el.classList.contains(TRANSLATION_NODE_CLASS)) {
+			continue;
+		} else {
+			text += child.textContent || '';
+		}
+	}
+	closeLine(null);
+	if (!sawBr || lines.length < 2) return null;
+	return lines;
+}
+
 // Cache key is the full text — a 32-bit hash would silently collide
 // across this module-lifetime cache; hashText is only for data-src-hash
 function cacheKeyFor(text: string, targetLanguage: string): string {
 	return targetLanguage + '\u0000' + text;
 }
 
-function insertNode(doc: Document, block: HTMLElement, hash: string): HTMLElement {
-	const node = ensureTranslationNode(doc, block, hash, 'full');
-	// A visible placeholder — an empty pending node renders as a barely
-	// visible 2px rule, which reads as "the button did nothing"
+// A visible placeholder — an empty pending node renders as a barely
+// visible 2px rule, which reads as "the button did nothing"
+function applyPendingPlaceholder(node: HTMLElement): HTMLElement {
 	if (node.getAttribute('data-state') === 'pending' && !node.textContent) {
 		node.textContent = getMessage('translationLoading');
 	}
 	return node;
+}
+
+function insertLineNode(doc: Document, block: HTMLElement, line: LineUnit, hash: string): HTMLElement {
+	const existing = block.querySelector(
+		`:scope > .${TRANSLATION_NODE_CLASS}[data-origin="full"][data-src-hash="${hash}"]`
+	);
+	if (existing) return existing as HTMLElement;
+	const node = doc.createElement('span');
+	node.className = `${TRANSLATION_NODE_CLASS} obsidian-reader-translation-line`;
+	node.setAttribute('data-origin', 'full');
+	node.setAttribute('data-src-hash', hash);
+	node.setAttribute('data-state', 'pending');
+	if (line.anchor && line.anchor.parentNode === block) {
+		(line.anchor as ChildNode).after(node);
+	} else {
+		block.appendChild(node);
+	}
+	notifyTranslationMutation(doc);
+	return node;
+}
+
+// A block expands to one unit (the block itself) or one unit per <br> line
+function unitsFor(doc: Document, block: HTMLElement, targetLanguage: string): Array<{ text: string; node: HTMLElement }> {
+	const lines = splitBrLines(block);
+	if (!lines) {
+		const text = blockText(block);
+		if (!text) return [];
+		const node = ensureTranslationNode(doc, block, hashText(cacheKeyFor(text, targetLanguage)), 'full');
+		return [{ text, node: applyPendingPlaceholder(node) }];
+	}
+	return lines.map((line, index) => {
+		// Hash includes the line index so duplicate lines get distinct nodes
+		const hash = hashText(index + ':' + cacheKeyFor(line.text, targetLanguage));
+		return { text: line.text, node: applyPendingPlaceholder(insertLineNode(doc, block, line, hash)) };
+	});
 }
 
 function fillNode(node: HTMLElement, translation: string): void {
@@ -116,17 +186,16 @@ async function translateBlocks(doc: Document, state: FullTranslationState, block
 	const { targetLanguage, article } = state.opts;
 
 	// Serve cache hits immediately; the rest go to the engine
-	const misses: Array<{ block: HTMLElement; text: string; node: HTMLElement }> = [];
+	const misses: Array<{ text: string; node: HTMLElement }> = [];
 	for (const block of blocks) {
-		const text = blockText(block);
-		if (!text) continue;
-		const cacheKey = cacheKeyFor(text, targetLanguage);
-		const node = insertNode(doc, block, hashText(cacheKey));
-		const cached = fullTextCache.get(cacheKey);
-		if (cached) {
-			fillNode(node, cached);
-		} else if (node.getAttribute('data-state') !== 'done') {
-			misses.push({ block, text, node });
+		for (const unit of unitsFor(doc, block, targetLanguage)) {
+			const { text, node } = unit;
+			const cached = fullTextCache.get(cacheKeyFor(text, targetLanguage));
+			if (cached) {
+				fillNode(node, cached);
+			} else if (node.getAttribute('data-state') !== 'done') {
+				misses.push({ text, node });
+			}
 		}
 	}
 	if (misses.length === 0) return;

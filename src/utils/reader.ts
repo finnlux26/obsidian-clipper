@@ -38,6 +38,7 @@ const VIEWPORT = 'width=device-width, initial-scale=1, maximum-scale=1';
 import { ReaderSettings } from '../types/types';
 import { wireTranscript } from './reader-transcript';
 import { registerSelectionTranslation, getTargetLanguage, articleMetaFromDocument } from './reader-translation';
+import { linkifyMarkdownLinks } from './markdown-links';
 import {
 	FULL_TRANSLATION_NAV_BUTTON_CLASS,
 	createFullTranslationNavButton,
@@ -2666,6 +2667,10 @@ export class Reader {
 			while (contentDoc.body.firstChild) {
 				article.appendChild(doc.adoptNode(contentDoc.body.firstChild));
 			}
+			// Literal "[Label](url)" markdown around auto-linked URLs (common
+			// in YouTube descriptions) folds into labeled anchors; markdown
+			// clips round-trip to the identical source text
+			linkifyMarkdownLinks(article);
 		}
 
 		// Footer

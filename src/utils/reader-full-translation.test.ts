@@ -312,6 +312,96 @@ describe('full-article translation', () => {
 		expect(FakeIntersectionObserver.instances.every(i => i.observed.length === 0)).toBe(true);
 	});
 
+	test('a <br>-separated block translates per line, under each line', async () => {
+		const p1 = document.getElementById('p1')!;
+		p1.innerHTML = 'Line one about banks.<br>Line two about rates.<br><br>### Heading line';
+		stubBrowserTranslator();
+		enableFullTranslation(document, OPTS);
+
+		io().trigger([p1]);
+		await settle();
+
+		// No sibling node for the block itself — the lines carry the translations
+		expect(p1.nextElementSibling?.classList.contains('obsidian-reader-translation')).toBeFalsy();
+		const spans = p1.querySelectorAll(':scope > span.obsidian-reader-translation[data-origin="full"]');
+		expect(spans).toHaveLength(3);
+		expect(spans[0].textContent).toBe('译:Line one about banks.');
+		expect(spans[1].textContent).toBe('译:Line two about rates.');
+		expect(spans[2].textContent).toBe('译:### Heading line');
+		// Each span sits right after the <br> that ends its line; the last
+		// line (no trailing <br>) gets it appended at the block end
+		const kids = Array.from(p1.childNodes);
+		expect(kids[kids.length - 1]).toBe(spans[2]);
+		const firstBr = p1.querySelector('br')!;
+		expect(firstBr.nextSibling).toBe(spans[0]);
+	});
+
+	test('line spans are idempotent across re-triggers', async () => {
+		const p1 = document.getElementById('p1')!;
+		p1.innerHTML = 'Line one about banks.<br>Line two about rates.';
+		stubBrowserTranslator();
+		enableFullTranslation(document, OPTS);
+
+		io().trigger([p1]);
+		await settle();
+		io().trigger([p1]);
+		await settle();
+
+		expect(p1.querySelectorAll('.obsidian-reader-translation')).toHaveLength(2);
+	});
+
+	test('disable removes line spans and restores the block exactly', async () => {
+		const p1 = document.getElementById('p1')!;
+		p1.innerHTML = 'Line one about banks.<br>Line two about rates.';
+		const snapshot = document.querySelector('article')!.innerHTML;
+		stubBrowserTranslator();
+		enableFullTranslation(document, OPTS);
+		io().trigger([p1]);
+		await settle();
+
+		disableFullTranslation(document);
+		expect(document.querySelector('article')!.innerHTML).toBe(snapshot);
+	});
+
+	test('a block with a trailing <br> but a single line stays a whole-block unit', async () => {
+		const p1 = document.getElementById('p1')!;
+		p1.innerHTML = 'Only line about banks.<br>';
+		stubBrowserTranslator();
+		enableFullTranslation(document, OPTS);
+
+		io().trigger([p1]);
+		await settle();
+
+		expect(p1.querySelectorAll('span.obsidian-reader-translation')).toHaveLength(0);
+		expect(p1.nextElementSibling!.classList.contains('obsidian-reader-translation')).toBe(true);
+		expect(p1.nextElementSibling!.textContent).toBe('译:Only line about banks.');
+	});
+
+	test('LLM path numbers each line as its own batch item', async () => {
+		delete (globalThis as any).Translator;
+		const p1 = document.getElementById('p1')!;
+		p1.innerHTML = 'Line one about banks.<br>Line two about rates.';
+		sendMessage.mockResolvedValue({
+			ok: true, status: 200,
+			text: JSON.stringify({
+				content: [{ type: 'text', text: JSON.stringify({ translations: { '1': '第一行。', '2': '第二行。' } }) }],
+				stop_reason: 'end_turn'
+			})
+		});
+		enableFullTranslation(document, OPTS);
+
+		io().trigger([p1]);
+		await settle(10);
+
+		const body = JSON.parse((sendMessage.mock.calls[0][0] as any).options.body);
+		const content = body.messages.map((m: { content: string }) => m.content).join('\n');
+		expect(content).toContain('[1] Line one about banks.');
+		expect(content).toContain('[2] Line two about rates.');
+		const spans = p1.querySelectorAll('span.obsidian-reader-translation');
+		expect(spans[0].textContent).toBe('第一行。');
+		expect(spans[1].textContent).toBe('第二行。');
+	});
+
 	test('per-URL memory round-trips through storage', async () => {
 		const store: Record<string, any> = {};
 		vi.spyOn(browser.storage.local, 'get').mockImplementation(async (key: any) => ({ [key]: store[key] }));
